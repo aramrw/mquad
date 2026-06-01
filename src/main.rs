@@ -12,6 +12,7 @@ use yomichan_rs::Yomichan;
 use crate::router::Route;
 use crate::router::Router;
 use crate::router::threed::ThreeDState;
+use crate::router::audio::AudioState;
 use crate::tracing_utils::ProgressLayer;
 
 pub struct CachedEntry {
@@ -31,6 +32,7 @@ pub struct YomichanApp {
     pub progress_sender: mpsc::Sender<String>,
     pub language_index: usize,
     pub threed_state: ThreeDState,
+    pub audio_state: AudioState,
     pub skin: macroquad::ui::Skin,
     pub show_ui: bool,
 }
@@ -139,9 +141,13 @@ async fn main() {
         progress_sender: tx,
         language_index: 0,
         threed_state: ThreeDState::default(),
+        audio_state: AudioState::default(),
         skin: YomichanApp::create_skin(),
         show_ui: true,
     };
+
+    app.refresh_shader_list();
+    app.compile_shader();
 
     loop {
         clear_background(BLACK);
@@ -149,6 +155,8 @@ async fn main() {
         if is_key_down(KeyCode::LeftShift) && is_key_pressed(KeyCode::H) {
             app.show_ui = !app.show_ui;
         }
+
+        app.update_audio();
 
         if app.router.c_route == Route::ThreeD {
             app.render_threed_scene();

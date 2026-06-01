@@ -1,9 +1,11 @@
 use crate::YomichanApp;
 use macroquad::prelude::*;
 use macroquad::ui::Ui;
+use std::time::SystemTime;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ThreeDObject {
+    None,
     Cube,
     Sphere,
     Pyramid,
@@ -17,58 +19,134 @@ pub struct ThreeDState {
     pub shader_error: Option<String>,
     pub render_target: Option<RenderTarget>,
     pub resolution_scale: u32,
+    pub available_shaders: Vec<String>,
+    pub selected_shader: String,
+    pub auto_compile: bool,
+    pub last_modified: Option<SystemTime>,
+    pub show_controls: bool,
+    pub show_library: bool,
 }
 
 impl Default for ThreeDState {
     fn default() -> Self {
         Self {
-            selected_shape: ThreeDObject::Cube,
+            selected_shape: ThreeDObject::None,
             rotation: 0.0,
             material: None,
             shader_error: None,
             render_target: None,
-            resolution_scale: 8,
+            resolution_scale: 1,
+            available_shaders: Vec::new(),
+            selected_shader: "default.frag".to_string(),
+            auto_compile: true,
+            last_modified: None,
+            show_controls: true,
+            show_library: true,
         }
     }
 }
 
-const VERTEX_SHADER: &str = r#"#version 100
+const SHADER_DIR: &str = "shaders";
+
+impl YomichanApp {
+    pub fn refresh_shader_list(&mut self) {
+        self.threed_state.available_shaders.clear();
+        if let Ok(entries) = std::fs::read_dir(SHADER_DIR) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if name.ends_with(".frag") {
+                            self.threed_state.available_shaders.push(name);
+                        }
+                    }
+                }
+            }
+        }
+        self.threed_state.available_shaders.sort();
+    }
+
+    pub fn auto_compile_check(&mut self) {
+        if !self.threed_state.auto_compile {
+            return;
+        }
+
+        let path = format!("{}/{}", SHADER_DIR, self.threed_state.selected_shader);
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            if let Ok(modified) = metadata.modified() {
+                if self.threed_state.last_modified.is_none()
+                    || modified > self.threed_state.last_modified.unwrap()
+                {
+                    self.threed_state.last_modified = Some(modified);
+                    self.compile_shader();
+                }
+            }
+        }
+    }
+
+    pub fn compile_shader(&mut self) {
+        let frag_path = format!("{}/{}", SHADER_DIR, self.threed_state.selected_shader);
+        let vert_path = frag_path.replace(".frag", ".vert");
+
+        let frag_code = std::fs::read_to_string(&frag_path).unwrap_or_else(|_| {
+            let default_code = r#"#version 150
+precision lowp float;
+in vec2 uv;
+out vec4 fragColor;
+uniform sampler2D AudioTexture;
+void main() {
+    float audio = texture(AudioTexture, vec2(uv.x, 0.5)).r;
+    fragColor = vec4(audio, 0.5, 1.0, 1.0);
+}
+"#;
+            let _ = std::fs::write(&frag_path, default_code);
+            default_code.to_string()
+        });
+
+        // Try to detect version from frag_code
+        let version_line = frag_code.lines().next().unwrap_or("#version 100");
+
+        let vert_code = std::fs::read_to_string(&vert_path).unwrap_or_else(|_| {
+            if version_line.contains("400")
+                || version_line.contains("330")
+                || version_line.contains("150")
+            {
+                format!(
+                    r#"{}
+in vec3 position;
+in vec2 texcoord;
+out vec2 uv;
+uniform mat4 Model;
+uniform mat4 Projection;
+
+void main() {{
+    gl_Position = Projection * Model * vec4(position, 1.0);
+    uv = texcoord;
+}}
+"#,
+                    version_line
+                )
+            } else {
+                r#"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
 varying lowp vec2 uv;
 uniform mat4 Model;
 uniform mat4 Projection;
+
 void main() {
     gl_Position = Projection * Model * vec4(position, 1.0);
     uv = texcoord;
 }
-"#;
-
-const SHADER_FILE: &str = "shader.frag";
-
-impl YomichanApp {
-    pub fn compile_shader(&mut self) {
-        let code = match std::fs::read_to_string(SHADER_FILE) {
-            Ok(c) => c,
-            Err(_) => {
-                // If file doesn't exist, create it with default code
-                let default_code = r#"#version 100
-precision lowp float;
-varying vec2 uv;
-uniform float Time;
-void main() {
-    gl_FragColor = vec4(uv.x, uv.y, abs(sin(Time)), 1.0);
-}
-"#;
-                let _ = std::fs::write(SHADER_FILE, default_code);
-                default_code.to_string()
+"#
+                .to_string()
             }
-        };
+        });
 
         let result = load_material(
             ShaderSource::Glsl {
-                vertex: VERTEX_SHADER,
-                fragment: &code,
+                vertex: &vert_code,
+                fragment: &frag_code,
             },
             MaterialParams {
                 uniforms: vec![
@@ -82,26 +160,45 @@ void main() {
                         uniform_type: UniformType::Float2,
                         array_count: 1,
                     },
+                    UniformDesc {
+                        name: "AudioLevel".to_string(),
+                        uniform_type: UniformType::Float1,
+                        array_count: 1,
+                    },
                 ],
+                textures: vec!["AudioTexture".to_string()],
                 ..Default::default()
             },
         );
 
         match result {
             Ok(m) => {
+                println!(
+                    "SUCCESS: Compiled shader {}",
+                    self.threed_state.selected_shader
+                );
                 self.threed_state.material = Some(m);
                 self.threed_state.shader_error = None;
             }
             Err(e) => {
-                self.threed_state.shader_error = Some(format!("{:?}", e));
+                eprintln!(
+                    "ERROR: Failed to compile {}: {}",
+                    self.threed_state.selected_shader, e
+                );
+                self.threed_state.shader_error = Some(format!("{}", e));
             }
         }
     }
 
     pub fn render_threed_scene(&mut self) {
+        self.auto_compile_check();
+
         let (target_w, target_h) = if self.threed_state.resolution_scale > 1 {
             let scale = self.threed_state.resolution_scale as f32;
-            ((screen_width() / scale).max(1.0), (screen_height() / scale).max(1.0))
+            (
+                (screen_width() / scale).max(1.0),
+                (screen_height() / scale).max(1.0),
+            )
         } else {
             (screen_width(), screen_height())
         };
@@ -140,6 +237,35 @@ void main() {
             if let Some(material) = &self.threed_state.material {
                 material.set_uniform("Time", get_time() as f32);
                 material.set_uniform("Resolution", (target_w, target_h));
+
+                let avg_vol: f32 = if !self.audio_state.buffer.is_empty() {
+                    self.audio_state.buffer.iter().map(|s| s.abs()).sum::<f32>()
+                        / self.audio_state.buffer.len() as f32
+                } else {
+                    0.0
+                };
+
+                if get_frame_time() > 0.0 {
+                    static mut LAST_PRINT: f64 = 0.0;
+                    unsafe {
+                        let now = get_time();
+                        if now - LAST_PRINT > 2.0 {
+                            println!(
+                                "Shader: {}, AudioLevel: {:.4}, Rec: {}",
+                                self.threed_state.selected_shader,
+                                avg_vol,
+                                self.audio_state.is_recording
+                            );
+                            LAST_PRINT = now;
+                        }
+                    }
+                }
+
+                material.set_uniform("AudioLevel", avg_vol);
+
+                if let Some(audio_tex) = &self.audio_state.audio_texture {
+                    material.set_texture("AudioTexture", audio_tex.clone());
+                }
                 gl_use_material(material);
             }
 
@@ -163,13 +289,26 @@ void main() {
                 ..Default::default()
             });
 
+            clear_background(BLACK);
+            draw_grid(10, 1.0, GREEN, GRAY);
+
             if let Some(material) = &self.threed_state.material {
                 material.set_uniform("Time", get_time() as f32);
                 material.set_uniform("Resolution", (target_w, target_h));
+
+                let avg_vol: f32 = if !self.audio_state.buffer.is_empty() {
+                    self.audio_state.buffer.iter().map(|s| s.abs()).sum::<f32>()
+                        / self.audio_state.buffer.len() as f32
+                } else {
+                    0.0
+                };
+                material.set_uniform("AudioLevel", avg_vol);
+
+                if let Some(audio_tex) = &self.audio_state.audio_texture {
+                    material.set_texture("AudioTexture", audio_tex.clone());
+                }
                 gl_use_material(material);
             }
-
-            draw_grid(10, 1.0, GREEN, GRAY);
 
             match self.threed_state.selected_shape {
                 ThreeDObject::Cube => {
@@ -196,7 +335,7 @@ void main() {
                     draw_line_3d(b3, b4, ORANGE);
                     draw_line_3d(b4, b1, ORANGE);
                 }
-                ThreeDObject::Fullscreen => unreachable!(),
+                ThreeDObject::Fullscreen | ThreeDObject::None => {}
             }
 
             if self.threed_state.material.is_some() {
@@ -223,72 +362,147 @@ void main() {
     }
 
     pub fn draw_threed_tab(&mut self, ui: &mut Ui) {
-        ui.label(None, "Active Shader");
+        use macroquad::ui::hash;
 
-        if ui.button(None, "Cube") {
-            self.threed_state.selected_shape = ThreeDObject::Cube;
-        }
+        ui.checkbox(
+            hash!("sh_ctrl"),
+            "Show Settings",
+            &mut self.threed_state.show_controls,
+        );
         ui.same_line(0.0);
-        if ui.button(None, "Sphere") {
-            self.threed_state.selected_shape = ThreeDObject::Sphere;
-        }
-        ui.same_line(0.0);
-        if ui.button(None, "Pyramid") {
-            self.threed_state.selected_shape = ThreeDObject::Pyramid;
-        }
-        ui.same_line(0.0);
-        if ui.button(None, "Fullscreen") {
-            self.threed_state.selected_shape = ThreeDObject::Fullscreen;
-        }
+        ui.checkbox(
+            hash!("sh_lib"),
+            "Show Library",
+            &mut self.threed_state.show_library,
+        );
 
-        ui.same_line(0.0);
-        let res_text = format!("Res: {}x", self.threed_state.resolution_scale);
-        if ui.button(None, res_text.as_str()) {
-            // bounded between 8-48
-            self.threed_state.resolution_scale *= 2;
-            if self.threed_state.resolution_scale > 48 {
-                self.threed_state.resolution_scale = 8;
-            }
-        }
+        // Window 1: Shader Controls
+        if self.threed_state.show_controls {
+            macroquad::ui::widgets::Window::new(
+                hash!("threed_controls"),
+                macroquad::math::vec2(10.0, 110.0),
+                macroquad::math::vec2(320.0, 280.0),
+            )
+            .label("Shader Settings")
+            .ui(ui, |ui| {
+                ui.label(
+                    None,
+                    &format!("Active: {}", self.threed_state.selected_shader),
+                );
 
-        ui.same_line(0.0);
-        if ui.button(None, "Compile") {
-            self.compile_shader();
-        }
-
-        ui.same_line(0.0);
-        if ui.button(None, "Clear Shader") {
-            self.threed_state.material = None;
-            self.threed_state.shader_error = None;
-        }
-
-        ui.same_line(0.0);
-        if ui.button(None, "cpy_fpath") {
-            if let Ok(path) = std::env::current_dir() {
-                let abs_path = path.join(SHADER_FILE);
-                let path_str = abs_path.to_string_lossy().to_string();
-
-                // Use pbcopy on macOS
-                use std::io::Write;
-                use std::process::{Command, Stdio};
-                if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-                    if let Some(mut stdin) = child.stdin.take() {
-                        let _ = stdin.write_all(path_str.as_bytes());
-                    }
-                    let _ = child.wait();
+                ui.separator();
+                ui.label(None, "Shape:");
+                if ui.button(None, "None") {
+                    self.threed_state.selected_shape = ThreeDObject::None;
                 }
-            }
+                ui.same_line(0.0);
+                if ui.button(None, "Cube") {
+                    self.threed_state.selected_shape = ThreeDObject::Cube;
+                }
+                ui.same_line(0.0);
+                if ui.button(None, "Sphere") {
+                    self.threed_state.selected_shape = ThreeDObject::Sphere;
+                }
+
+                if ui.button(None, "Pyramid") {
+                    self.threed_state.selected_shape = ThreeDObject::Pyramid;
+                }
+                ui.same_line(0.0);
+                if ui.button(None, "Fullscreen") {
+                    self.threed_state.selected_shape = ThreeDObject::Fullscreen;
+                }
+                ui.separator();
+                let res_text = format!("Pixel Scale: {}x", self.threed_state.resolution_scale);
+                ui.label(None, res_text.as_str());
+                ui.same_line(0.0);
+                if ui.button(None, "Cycle Scale") {
+                    self.threed_state.resolution_scale *= 2;
+                    if self.threed_state.resolution_scale > 64 {
+                        self.threed_state.resolution_scale = 1;
+                    }
+                }
+
+                ui.checkbox(
+                    hash!("auto_compile"),
+                    "Auto-Compile",
+                    &mut self.threed_state.auto_compile,
+                );
+
+                ui.separator();
+                if ui.button(None, "Manual Compile") {
+                    self.compile_shader();
+                }
+                ui.same_line(0.0);
+                if ui.button(None, "Clear Material") {
+                    self.threed_state.material = None;
+                }
+                ui.same_line(0.0);
+                if ui.button(None, "Copy Path") {
+                    if let Ok(path) = std::env::current_dir() {
+                        let abs_path = path
+                            .join(SHADER_DIR)
+                            .join(&self.threed_state.selected_shader);
+                        let path_str = abs_path.to_string_lossy().to_string();
+                        use std::io::Write;
+                        use std::process::{Command, Stdio};
+                        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn()
+                        {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                _ = stdin.write_all(path_str.as_bytes());
+                            }
+                            _ = child.wait();
+                        }
+                    }
+                }
+
+                if self.threed_state.shader_error.is_some() {
+                    ui.separator();
+                    if ui.button(None, "!! VIEW SHADER ERRORS !!") {
+                        self.router.set(crate::router::Route::ShaderError);
+                    }
+                }
+            });
         }
 
-        if let Some(err) = &self.threed_state.shader_error {
-            ui.label(None, &format!("Error: {}", err));
-        }
+        // Window 2: Shader Library
+        if self.threed_state.show_library {
+            macroquad::ui::widgets::Window::new(
+                hash!("threed_library"),
+                macroquad::math::vec2(340.0, 110.0),
+                macroquad::math::vec2(250.0, 400.0),
+            )
+            .label("Shader Library")
+            .ui(ui, |ui| {
+                if ui.button(None, "Refresh List") {
+                    self.refresh_shader_list();
+                }
+                ui.same_line(0.0);
+                if ui.button(None, "New Shader") {
+                    let name = format!("shader_{}.frag", get_time() as u32);
+                    self.threed_state.selected_shader = name;
+                    self.compile_shader();
+                    self.refresh_shader_list();
+                }
 
-        ui.separator();
-        // thanks for the step by step..
-        // ui.label(None, "External Shader Mode:");
-        // ui.label(None, "- Edit 'shader.frag' in your favorite editor.");
-        // ui.label(None, "- Click 'Compile' to see changes.");
-        // ui.label(None, "- Click 'cpy_fpath' to copy the absolute path.");
+                ui.separator();
+
+                // Simple list of shaders
+                let shaders = self.threed_state.available_shaders.clone();
+                for shader in shaders {
+                    let is_selected = self.threed_state.selected_shader == shader;
+                    let label = if is_selected {
+                        format!("> {}", shader)
+                    } else {
+                        shader.clone()
+                    };
+
+                    if ui.button(None, label.as_str()) {
+                        self.threed_state.selected_shader = shader;
+                        self.threed_state.last_modified = None; // Trigger recompile
+                        self.compile_shader();
+                    }
+                }
+            });
+        }
     }
 }
