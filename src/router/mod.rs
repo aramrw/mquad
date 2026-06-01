@@ -40,12 +40,15 @@ impl YomichanApp {
         .titlebar(false)
         .movable(false)
         .ui(&mut root_ui(), |ui| {
+            // Padding at the very top
+            ui.label(None, "");
+            
             // Row 1: Brand
             ui.label(None, "--- RAY DICTIONARY ---");
+            ui.label(None, "");
             
             // Row 2: Mode Selection
-            ui.label(None, "Mode:");
-            ui.same_line(0.0);
+            ui.label(None, "Select Mode:");
             if ui.button(None, "Search") {
                 self.router.set(Route::Search);
             }
@@ -54,12 +57,17 @@ impl YomichanApp {
                 self.router.set(Route::Import);
             }
             
+            ui.label(None, "");
+
             // Row 3: Language Selection
-            ui.label(None, "Language:");
-            ui.same_line(0.0);
+            ui.label(None, "Select Language:");
             let old_lang = self.language_index;
             ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
                 .ui(ui, &mut self.language_index);
+            
+            // Extra spacing after dropdown to ensure it's not cut off by the separator
+            ui.label(None, "");
+            ui.label(None, "");
 
             if old_lang != self.language_index {
                 let iso = if self.language_index == 0 { "ja" } else { "es" };
