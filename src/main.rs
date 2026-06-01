@@ -4,11 +4,11 @@ use macroquad::main;
 use macroquad::prelude::*;
 use macroquad::ui::root_ui;
 use std::sync::{Arc, mpsc};
-use yomichan_rs::Yomichan;
-use tracing_subscriber::layer::{Context, SubscriberExt};
+use tracing::field::{Field, Visit};
+use tracing_core::{Event, Subscriber};
 use tracing_subscriber::Registry;
-use tracing_core::{Subscriber, Event};
-use tracing::field::{Visit, Field};
+use tracing_subscriber::layer::{Context, SubscriberExt};
+use yomichan_rs::Yomichan;
 
 use crate::router::Route;
 
@@ -59,10 +59,10 @@ impl YomichanApp {
 
     fn nav_buttons(&mut self) {
         use macroquad::ui::hash;
-        use macroquad::ui::widgets::{Window, ComboBox};
+        use macroquad::ui::widgets::{ComboBox, Window};
 
-        Window::new(hash!(), vec2(10., 10.), vec2(400., 50.))
-            .label("Navigation")
+        // Navigation
+        Window::new(hash!(), vec2(10., 10.), vec2(screen_width() - 20., 70.))
             .titlebar(true)
             .ui(&mut root_ui(), |ui| {
                 if ui.button(None, "Search") {
@@ -76,8 +76,7 @@ impl YomichanApp {
                 ui.label(None, "Lang:");
                 ui.same_line(0.0);
                 let old_lang = self.language_index;
-                ComboBox::new(hash!(), &["Japanese", "Spanish"])
-                    .ui(ui, &mut self.language_index);
+                ComboBox::new(hash!(), &["Japanese", "Spanish"]).ui(ui, &mut self.language_index);
                 if old_lang != self.language_index {
                     let iso = if self.language_index == 0 { "ja" } else { "es" };
                     if let Ok(_) = self.yomichan.set_language(iso) {
@@ -90,8 +89,8 @@ impl YomichanApp {
     }
 
     fn draw_import_tab(&mut self) {
-        use macroquad::ui::widgets::Window;
         use macroquad::ui::hash;
+        use macroquad::ui::widgets::Window;
 
         // Drain pending progress messages
         while let Ok(msg) = self.progress_receiver.try_recv() {
@@ -102,13 +101,16 @@ impl YomichanApp {
             .label("Import Dictionary")
             .ui(&mut root_ui(), |ui| {
                 ui.label(None, "Select a Yomitan .zip dictionary file:");
-                
+
                 if ui.button(None, "Open File Dialog") {
-                    if let Some(path) = rfd::FileDialog::new().add_filter("zip", &["zip"]).pick_file() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("zip", &["zip"])
+                        .pick_file()
+                    {
                         self.import_status = format!("Selected: {:?}", path);
                         let ycd = self.yomichan.clone();
                         let tx = self.progress_sender.clone();
-                        
+
                         std::thread::spawn(move || {
                             let _ = tx.send("Starting import...".into());
                             match ycd.import_dictionaries(&[path]) {
@@ -129,54 +131,12 @@ impl YomichanApp {
             });
     }
 
-    fn draw_search_tab(&mut self) {
-        use macroquad::ui::widgets::{Window, InputText};
-        use macroquad::ui::hash;
-
-        Window::new(hash!(), vec2(10., 70.), vec2(400., 400.))
-            .label("Dictionary Search")
-            .ui(&mut root_ui(), |ui| {
-                ui.label(None, "Enter Japanese text:");
-                InputText::new(hash!()).ui(ui, &mut self.search_query);
-
-                if ui.button(None, "Search") && !self.search_query.is_empty() {
-                    println!("Searching for: {}", self.search_query);
-                    self.search_results = self.yomichan.search(&self.search_query).ok();
-                }
-                
-                ui.separator();
-
-                if let Some(res) = &self.search_results {
-                    for segment in res.segments.iter().take(5) {
-                        if segment.entries.is_empty() {
-                            ui.label(None, &format!("No results for: {}", segment.text));
-                            continue;
-                        }
-                        for entry in &segment.entries {
-                            let headword_str = entry.headwords
-                                .iter()
-                                .map(|h| format!("{} ({})", h.term.clone(), h.reading.clone()))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            ui.label(None, &headword_str);
-                            
-                            for def in &entry.definitions {
-                                for group in &def.entries {
-                                    ui.label(None, &format!("- {}", group.plain_text));
-                                }
-                            }
-                            ui.separator();
-                        }
-                    }
-                }
-            });
-    }
 }
 
 #[main("...")]
 async fn main() {
     let (tx, rx) = mpsc::channel();
-    
+
     // Register the tracing subscriber
     let subscriber = Registry::default().with(ProgressLayer { sender: tx.clone() });
     tracing::subscriber::set_global_default(subscriber).ok();
@@ -188,7 +148,7 @@ async fn main() {
     };
 
     let ycd = Arc::new(Yomichan::new(".").expect("Failed to init database"));
-    
+
     let mut app = YomichanApp {
         router: Router::default(),
         yomichan: ycd,
