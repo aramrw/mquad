@@ -41,6 +41,7 @@ struct YomichanApp {
     router: Router,
     yomichan: Arc<Yomichan>,
     search_query: String,
+    search_results: Option<yomichan_rs::SearchResult>,
     import_status: String,
     progress_receiver: mpsc::Receiver<String>,
     progress_sender: mpsc::Sender<String>,
@@ -50,8 +51,8 @@ impl YomichanApp {
     pub fn draw_ui(&mut self) {
         self.nav_buttons();
         match self.router.c_route {
-            Route::Search => self.search_results(),
-            Route::Import => self.import_results(),
+            Route::Search => self.draw_search_tab(),
+            Route::Import => self.draw_import_tab(),
         }
     }
 
@@ -73,7 +74,7 @@ impl YomichanApp {
             });
     }
 
-    fn import_results(&mut self) {
+    fn draw_import_tab(&mut self) {
         use macroquad::ui::widgets::Window;
         use macroquad::ui::hash;
 
@@ -113,7 +114,7 @@ impl YomichanApp {
             });
     }
 
-    fn search_results(&mut self) {
+    fn draw_search_tab(&mut self) {
         use macroquad::ui::widgets::{Window, InputText};
         use macroquad::ui::hash;
 
@@ -125,17 +126,18 @@ impl YomichanApp {
 
                 if ui.button(None, "Search") && !self.search_query.is_empty() {
                     println!("Searching for: {}", self.search_query);
+                    self.search_results = self.yomichan.search(&self.search_query).ok();
                 }
                 
                 ui.separator();
 
-                if let Ok(res) = self.yomichan.search(&self.search_query) {
-                    for segment in res.segments {
+                if let Some(res) = &self.search_results {
+                    for segment in res.segments.iter().take(5) {
                         if segment.entries.is_empty() {
                             ui.label(None, &format!("No results for: {}", segment.text));
                             continue;
                         }
-                        for entry in segment.entries {
+                        for entry in &segment.entries {
                             let headword_str = entry.headwords
                                 .iter()
                                 .map(|h| format!("{} ({})", h.term.clone(), h.reading.clone()))
@@ -143,8 +145,8 @@ impl YomichanApp {
                                 .join(", ");
                             ui.label(None, &headword_str);
                             
-                            for def in entry.definitions {
-                                for group in def.entries {
+                            for def in &entry.definitions {
+                                for group in &def.entries {
                                     ui.label(None, &format!("- {}", group.plain_text));
                                 }
                             }
@@ -176,6 +178,7 @@ async fn main() {
         router: Router::default(),
         yomichan: ycd,
         search_query: String::new(),
+        search_results: None,
         import_status: String::new(),
         progress_receiver: rx,
         progress_sender: tx,
