@@ -1,10 +1,10 @@
+use macroquad::ui::{hash, widgets::InputText, Ui};
+
 use crate::YomichanApp;
-use macroquad::math::vec2;
-use macroquad::ui::{Ui, hash, widgets::InputText};
 
 impl YomichanApp {
     pub fn draw_search_content(&mut self, ui: &mut Ui) {
-        use macroquad::input::{KeyCode, is_key_pressed};
+        use macroquad::input::{is_key_pressed, KeyCode};
 
         InputText::new(hash!("search_input")).ui(ui, &mut self.search_query);
 
@@ -20,13 +20,16 @@ impl YomichanApp {
                     .position(|s| !s.text.trim().is_empty())
                     .unwrap_or(0);
                 self.search_results = Some(res);
+                self.refresh_cache();
             } else {
                 self.search_results = None;
+                self.cached_entries.clear();
             }
         }
 
         ui.separator();
 
+        let mut next_segment = None;
         if let Some(res) = &self.search_results {
             let mut rendered_count = 0;
             for (i, segment) in res.segments.iter().enumerate() {
@@ -39,35 +42,37 @@ impl YomichanApp {
                     ui.same_line(0.0);
                 }
                 if ui.button(None, segment.text.as_str()) {
-                    self.selected_segment = i;
+                    next_segment = Some(i);
                 }
                 rendered_count += 1;
             }
             ui.separator();
+            ui.separator();
+        }
 
-            // Render selected segment definitions
-            if let Some(segment) = res.segments.get(self.selected_segment) {
-                ui.label(None, "--- Results ---");
-                if segment.entries.is_empty() {
-                    ui.label(None, "No entries found.");
-                }
-                for entry in &segment.entries {
-                    let headword_str = entry
-                        .headwords
-                        .iter()
-                        .map(|h| format!("{} ({})", h.term.clone(), h.reading.clone()))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    ui.label(None, &headword_str);
+        if let Some(i) = next_segment {
+            self.selected_segment = i;
+            self.refresh_cache();
+        }
 
-                    for def in &entry.definitions {
-                        for group in &def.entries {
-                            ui.label(None, &format!("- {}", group.plain_text));
-                        }
+        // Render cached segment definitions
+        if let Some(res) = &self.search_results {
+            if self.cached_entries.is_empty() && !res.segments.is_empty() {
+                // Handle edge case where first segment has no entries but wasn't skipped
+                if let Some(segment) = res.segments.get(self.selected_segment) {
+                    if !segment.text.trim().is_empty() && segment.entries.is_empty() {
+                        ui.label(None, "No entries found.");
                     }
-                    ui.separator();
                 }
             }
+        }
+
+        for entry in &self.cached_entries {
+            ui.label(None, &entry.headword);
+            for def in &entry.definitions {
+                ui.label(None, def);
+            }
+            ui.separator();
         }
     }
 }

@@ -40,13 +40,8 @@ impl YomichanApp {
         .titlebar(false)
         .movable(false)
         .ui(&mut root_ui(), |ui| {
-            // Padding at the very top
-            ui.label(None, "");
-            
-            // Row 1: Brand
-            ui.label(None, "--- RAY DICTIONARY ---");
-            ui.label(None, "");
-            
+            ui.separator();
+
             // Row 2: Mode Selection
             ui.label(None, "Select Mode:");
             if ui.button(None, "Search") {
@@ -56,26 +51,23 @@ impl YomichanApp {
             if ui.button(None, "Import") {
                 self.router.set(Route::Import);
             }
-            
-            ui.label(None, "");
+
+            ui.separator();
 
             // Row 3: Language Selection
             ui.label(None, "Select Language:");
             let old_lang = self.language_index;
             ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
                 .ui(ui, &mut self.language_index);
-            
-            // Extra spacing after dropdown to ensure it's not cut off by the separator
-            ui.label(None, "");
-            ui.label(None, "");
-
-            if old_lang != self.language_index {
-                let iso = if self.language_index == 0 { "ja" } else { "es" };
-                if let Ok(_) = self.yomichan.set_language(iso) {
-                    let _ = self.yomichan.save_settings();
-                    self.search_results = None;
-                }
-            }
+if old_lang != self.language_index {
+    let iso = if self.language_index == 0 { "ja" } else { "es" };
+    if let Ok(_) = self.yomichan.set_language(iso) {
+        let _ = self.yomichan.save_settings();
+        // clear search results on language change
+        self.search_results = None;
+        self.cached_entries.clear();
+    }
+}
 
             ui.separator();
 
