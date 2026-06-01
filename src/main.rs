@@ -3,39 +3,20 @@ mod tracing_utils;
 
 use macroquad::main;
 use macroquad::prelude::*;
+use macroquad::ui::root_ui;
 use std::sync::{Arc, mpsc};
 use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
 use yomichan_rs::Yomichan;
 
-use crate::router::Router;
 use crate::router::Route;
+use crate::router::Router;
+use crate::router::threed::ThreeDState;
 use crate::tracing_utils::ProgressLayer;
 
 pub struct CachedEntry {
     pub headword: String,
     pub definitions: Vec<String>,
-}
-
-#[derive(PartialEq, Clone, Copy)]
-pub enum ThreeDObject {
-    Cube,
-    Sphere,
-    Pyramid,
-}
-
-pub struct ThreeDState {
-    pub selected_shape: ThreeDObject,
-    pub rotation: f32,
-}
-
-impl Default for ThreeDState {
-    fn default() -> Self {
-        Self {
-            selected_shape: ThreeDObject::Cube,
-            rotation: 0.0,
-        }
-    }
 }
 
 pub struct YomichanApp {
@@ -50,9 +31,54 @@ pub struct YomichanApp {
     pub progress_sender: mpsc::Sender<String>,
     pub language_index: usize,
     pub threed_state: ThreeDState,
+    pub skin: macroquad::ui::Skin,
+    pub show_ui: bool,
 }
 
+const DEFAULT_FONT_SIZE: u8 = 24;
+
 impl YomichanApp {
+    pub fn create_skin() -> macroquad::ui::Skin {
+        use macroquad::ui::root_ui;
+
+        let label_style = root_ui()
+            .style_builder()
+            .text_color(Color::from_rgba(220, 220, 220, 255))
+            .font_size(DEFAULT_FONT_SIZE as u16)
+            .build();
+
+        let window_style = root_ui()
+            .style_builder()
+            .color(Color::from_rgba(30, 30, 30, 255))
+            .text_color(Color::from_rgba(255, 255, 255, 255))
+            .font_size(20)
+            .build();
+
+        let button_style = root_ui()
+            .style_builder()
+            .color(Color::from_rgba(50, 50, 50, 255))
+            .color_hovered(Color::from_rgba(70, 70, 70, 255))
+            .color_clicked(Color::from_rgba(90, 90, 90, 255))
+            .text_color(Color::from_rgba(255, 255, 255, 255))
+            .font_size(DEFAULT_FONT_SIZE as u16)
+            .build();
+
+        let editbox_style = root_ui()
+            .style_builder()
+            .color(Color::from_rgba(40, 40, 40, 255))
+            .text_color(Color::from_rgba(240, 240, 240, 255))
+            .font_size(DEFAULT_FONT_SIZE as u16)
+            .build();
+
+        macroquad::ui::Skin {
+            label_style,
+            window_style,
+            button_style,
+            editbox_style,
+            ..root_ui().default_skin().clone()
+        }
+    }
+
     pub fn refresh_cache(&mut self) {
         self.cached_entries.clear();
         let Some(res) = &self.search_results else {
@@ -66,14 +92,14 @@ impl YomichanApp {
             let headword = entry
                 .headwords
                 .iter()
-                .map(|h| format!("{} ({})", h.term, h.reading))
+                .map(|h| format!("  {} ({})", h.term, h.reading))
                 .collect::<Vec<_>>()
                 .join(", ");
 
             let mut definitions = Vec::new();
             for def in &entry.definitions {
                 for group in &def.entries {
-                    definitions.push(format!(" {}", group.plain_text));
+                    definitions.push(format!("   {}", group.plain_text));
                 }
             }
             self.cached_entries.push(CachedEntry {
@@ -81,50 +107,6 @@ impl YomichanApp {
                 definitions,
             });
         }
-    }
-
-    pub fn render_threed_scene(&mut self) {
-        self.threed_state.rotation += 0.02;
-        let x = self.threed_state.rotation.cos() * 5.0;
-        let z = self.threed_state.rotation.sin() * 5.0;
-
-        set_camera(&Camera3D {
-            position: vec3(x, 3.0, z),
-            up: vec3(0.0, 1.0, 0.0),
-            target: vec3(0.0, 0.0, 0.0),
-            ..Default::default()
-        });
-
-        draw_grid(10, 1.0, GREEN, GRAY);
-
-        match self.threed_state.selected_shape {
-            ThreeDObject::Cube => {
-                draw_cube(vec3(0.0, 1.0, 0.0), vec3(2.0, 2.0, 2.0), None, WHITE);
-                draw_cube_wires(vec3(0.0, 1.0, 0.0), vec3(2.0, 2.0, 2.0), MAROON);
-            }
-            ThreeDObject::Sphere => {
-                draw_sphere(vec3(0.0, 1.0, 0.0), 1.0, None, BLUE);
-                draw_sphere_wires(vec3(0.0, 1.0, 0.0), 1.0, None, SKYBLUE);
-            }
-            ThreeDObject::Pyramid => {
-                let top = vec3(0.0, 2.0, 0.0);
-                let b1 = vec3(-1.0, 0.0, -1.0);
-                let b2 = vec3(1.0, 0.0, -1.0);
-                let b3 = vec3(1.0, 0.0, 1.0);
-                let b4 = vec3(-1.0, 0.0, 1.0);
-
-                draw_line_3d(top, b1, YELLOW);
-                draw_line_3d(top, b2, YELLOW);
-                draw_line_3d(top, b3, YELLOW);
-                draw_line_3d(top, b4, YELLOW);
-                draw_line_3d(b1, b2, ORANGE);
-                draw_line_3d(b2, b3, ORANGE);
-                draw_line_3d(b3, b4, ORANGE);
-                draw_line_3d(b4, b1, ORANGE);
-            }
-        }
-
-        set_default_camera();
     }
 }
 
@@ -157,16 +139,27 @@ async fn main() {
         progress_sender: tx,
         language_index: 0,
         threed_state: ThreeDState::default(),
+        skin: YomichanApp::create_skin(),
+        show_ui: true,
     };
 
     loop {
         clear_background(BLACK);
-        
+
+        if is_key_down(KeyCode::LeftShift) && is_key_pressed(KeyCode::H) {
+            app.show_ui = !app.show_ui;
+        }
+
         if app.router.c_route == Route::ThreeD {
             app.render_threed_scene();
         }
 
-        app.draw_ui();
+        if app.show_ui {
+            root_ui().push_skin(&app.skin);
+            app.draw_ui();
+            root_ui().pop_skin();
+        }
+
         next_frame().await;
     }
 }
