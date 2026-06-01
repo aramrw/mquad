@@ -24,15 +24,30 @@ impl YomichanApp {
             if ui.button(None, "Search") && !self.search_query.is_empty() {
                 println!("Searching for: {}", self.search_query);
                 self.search_results = self.yomichan.search(&self.search_query).ok();
+                self.selected_segment = 0;
             }
 
             ui.separator();
 
             if let Some(res) = &self.search_results {
-                for segment in res.segments.iter().take(5) {
+                // Render segment selection buttons
+                ui.label(None, "Segments:");
+                for (i, segment) in res.segments.iter().enumerate() {
+                    let label = if segment.text.trim().is_empty() { " " } else { &segment.text };
+                    if i > 0 {
+                        ui.same_line(0.0);
+                    }
+                    if ui.button(None, label) {
+                        self.selected_segment = i;
+                    }
+                }
+                ui.separator();
+
+                // Render selected segment definitions
+                if let Some(segment) = res.segments.get(self.selected_segment) {
+                    ui.label(None, &format!("Selected: {}", segment.text));
                     if segment.entries.is_empty() {
-                        ui.label(None, &format!("{}...。", segment.text));
-                        continue;
+                        ui.label(None, "No results for this segment.");
                     }
                     for entry in &segment.entries {
                         let headword_str = entry
