@@ -1,5 +1,6 @@
 pub mod import;
 pub mod search;
+pub mod threed;
 
 use macroquad::{
     math::vec2,
@@ -14,6 +15,7 @@ pub enum Route {
     #[default]
     Search,
     Import,
+    ThreeD,
 }
 
 #[derive(Default)]
@@ -40,10 +42,16 @@ impl YomichanApp {
         .titlebar(false)
         .movable(false)
         .ui(&mut root_ui(), |ui| {
+            // Header spacing
+            ui.label(None, "");
+            
+            // Row 1: Brand / Title
+            ui.label(None, "RAY DICTIONARY");
             ui.separator();
-
+            ui.label(None, "");
+            
             // Row 2: Mode Selection
-            ui.label(None, "Select Mode:");
+            ui.label(None, "Navigation Mode");
             if ui.button(None, "Search") {
                 self.router.set(Route::Search);
             }
@@ -51,30 +59,37 @@ impl YomichanApp {
             if ui.button(None, "Import") {
                 self.router.set(Route::Import);
             }
-
-            ui.separator();
+            ui.same_line(0.0);
+            if ui.button(None, "Shaders") {
+                self.router.set(Route::ThreeD);
+            }
+            
+            ui.label(None, "");
 
             // Row 3: Language Selection
-            ui.label(None, "Select Language:");
+            ui.label(None, "Dictionary Language");
             let old_lang = self.language_index;
             ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
                 .ui(ui, &mut self.language_index);
-if old_lang != self.language_index {
-    let iso = if self.language_index == 0 { "ja" } else { "es" };
-    if let Ok(_) = self.yomichan.set_language(iso) {
-        let _ = self.yomichan.save_settings();
-        // clear search results on language change
-        self.search_results = None;
-        self.cached_entries.clear();
-    }
-}
-
+            
+            ui.label(None, "");
             ui.separator();
+            ui.label(None, "");
+
+            if old_lang != self.language_index {
+                let iso = if self.language_index == 0 { "ja" } else { "es" };
+                if let Ok(_) = self.yomichan.set_language(iso) {
+                    let _ = self.yomichan.save_settings();
+                    self.search_results = None;
+                    self.cached_entries.clear();
+                }
+            }
 
             // Content Area
             match self.router.c_route {
                 Route::Search => self.draw_search_content(ui),
                 Route::Import => self.draw_import_content(ui),
+                Route::ThreeD => self.draw_threed_tab(ui),
             }
         });
     }
