@@ -9,11 +9,33 @@ use tracing_subscriber::layer::SubscriberExt;
 use yomichan_rs::Yomichan;
 
 use crate::router::Router;
+use crate::router::Route;
 use crate::tracing_utils::ProgressLayer;
 
 pub struct CachedEntry {
     pub headword: String,
     pub definitions: Vec<String>,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum ThreeDObject {
+    Cube,
+    Sphere,
+    Pyramid,
+}
+
+pub struct ThreeDState {
+    pub selected_shape: ThreeDObject,
+    pub rotation: f32,
+}
+
+impl Default for ThreeDState {
+    fn default() -> Self {
+        Self {
+            selected_shape: ThreeDObject::Cube,
+            rotation: 0.0,
+        }
+    }
 }
 
 pub struct YomichanApp {
@@ -27,6 +49,7 @@ pub struct YomichanApp {
     pub progress_receiver: mpsc::Receiver<String>,
     pub progress_sender: mpsc::Sender<String>,
     pub language_index: usize,
+    pub threed_state: ThreeDState,
 }
 
 impl YomichanApp {
@@ -43,7 +66,7 @@ impl YomichanApp {
             let headword = entry
                 .headwords
                 .iter()
-                .map(|h| format!("* {} ({})", h.term, h.reading))
+                .map(|h| format!("{} ({})", h.term, h.reading))
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -59,6 +82,50 @@ impl YomichanApp {
             });
         }
     }
+
+    pub fn render_threed_scene(&mut self) {
+        self.threed_state.rotation += 0.02;
+        let x = self.threed_state.rotation.cos() * 5.0;
+        let z = self.threed_state.rotation.sin() * 5.0;
+
+        set_camera(&Camera3D {
+            position: vec3(x, 3.0, z),
+            up: vec3(0.0, 1.0, 0.0),
+            target: vec3(0.0, 0.0, 0.0),
+            ..Default::default()
+        });
+
+        draw_grid(10, 1.0, GREEN, GRAY);
+
+        match self.threed_state.selected_shape {
+            ThreeDObject::Cube => {
+                draw_cube(vec3(0.0, 1.0, 0.0), vec3(2.0, 2.0, 2.0), None, WHITE);
+                draw_cube_wires(vec3(0.0, 1.0, 0.0), vec3(2.0, 2.0, 2.0), MAROON);
+            }
+            ThreeDObject::Sphere => {
+                draw_sphere(vec3(0.0, 1.0, 0.0), 1.0, None, BLUE);
+                draw_sphere_wires(vec3(0.0, 1.0, 0.0), 1.0, None, SKYBLUE);
+            }
+            ThreeDObject::Pyramid => {
+                let top = vec3(0.0, 2.0, 0.0);
+                let b1 = vec3(-1.0, 0.0, -1.0);
+                let b2 = vec3(1.0, 0.0, -1.0);
+                let b3 = vec3(1.0, 0.0, 1.0);
+                let b4 = vec3(-1.0, 0.0, 1.0);
+
+                draw_line_3d(top, b1, YELLOW);
+                draw_line_3d(top, b2, YELLOW);
+                draw_line_3d(top, b3, YELLOW);
+                draw_line_3d(top, b4, YELLOW);
+                draw_line_3d(b1, b2, ORANGE);
+                draw_line_3d(b2, b3, ORANGE);
+                draw_line_3d(b3, b4, ORANGE);
+                draw_line_3d(b4, b1, ORANGE);
+            }
+        }
+
+        set_default_camera();
+    }
 }
 
 fn window_conf() -> Conf {
@@ -73,15 +140,8 @@ fn window_conf() -> Conf {
 async fn main() {
     let (tx, rx) = mpsc::channel();
 
-    // Register the tracing subscriber
     let subscriber = Registry::default().with(ProgressLayer { sender: tx.clone() });
     tracing::subscriber::set_global_default(subscriber).ok();
-
-    let _camera = Camera2D {
-        zoom: vec2(1.0, -1.0),
-        target: vec2(0.0, 0.0),
-        ..Default::default()
-    };
 
     let ycd = Arc::new(Yomichan::new(".").expect("Failed to init database"));
 
@@ -96,11 +156,16 @@ async fn main() {
         progress_receiver: rx,
         progress_sender: tx,
         language_index: 0,
+        threed_state: ThreeDState::default(),
     };
 
     loop {
         clear_background(BLACK);
-        set_default_camera();
+        
+        if app.router.c_route == Route::ThreeD {
+            app.render_threed_scene();
+        }
+
         app.draw_ui();
         next_frame().await;
     }
