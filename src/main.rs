@@ -43,7 +43,7 @@ impl YomichanApp {
             let headword = entry
                 .headwords
                 .iter()
-                .map(|h| format!("{} ({})", h.term, h.reading))
+                .map(|h| format!("* {} ({})", h.term, h.reading))
                 .collect::<Vec<_>>()
                 .join(", ");
 
