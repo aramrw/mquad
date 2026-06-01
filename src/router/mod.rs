@@ -1,6 +1,7 @@
 pub mod import;
 pub mod search;
 pub mod threed;
+pub mod audio;
 
 use macroquad::{
     ui::root_ui,
@@ -15,6 +16,8 @@ pub enum Route {
     Search,
     Import,
     ThreeD,
+    Audio,
+    ShaderError,
 }
 
 #[derive(Default)]
@@ -34,7 +37,7 @@ impl YomichanApp {
         use macroquad::ui::widgets::ComboBox;
 
         // Draw a background for the UI
-        if self.router.c_route != Route::ThreeD {
+        if self.router.c_route != Route::ThreeD && self.router.c_route != Route::Audio && self.router.c_route != Route::ShaderError {
             macroquad::prelude::draw_rectangle(
                 0.0,
                 0.0,
@@ -66,6 +69,10 @@ impl YomichanApp {
         ui.same_line(0.0);
         if ui.button(None, "Shaders") {
             self.router.set(Route::ThreeD);
+        }
+        ui.same_line(0.0);
+        if ui.button(None, "Audio") {
+            self.router.set(Route::Audio);
         }
 
         ui.separator();
@@ -114,14 +121,65 @@ impl YomichanApp {
                 });
             }
             Route::ThreeD => {
+                self.draw_threed_tab(ui);
+            }
+            Route::Audio => {
                 macroquad::ui::widgets::Window::new(
-                    hash!("threed_win"),
+                    hash!("audio_win"),
                     macroquad::math::vec2(10.0, 110.0),
-                    macroquad::math::vec2(300.0, 180.0),
+                    macroquad::math::vec2(screen_width() - 20.0, screen_height() - 120.0),
                 )
-                .label("Shader Settings")
+                .label("Audio Recorder")
                 .ui(ui, |ui| {
-                    self.draw_threed_tab(ui);
+                    self.draw_audio_tab(ui);
+                });
+            }
+            Route::ShaderError => {
+                macroquad::ui::widgets::Window::new(
+                    hash!("error_win"),
+                    macroquad::math::vec2(0.0, 100.0),
+                    macroquad::math::vec2(screen_width(), screen_height() - 100.0),
+                )
+                .label("Shader Compilation Errors")
+                .ui(ui, |ui| {
+                    if ui.button(None, "< Back to Shaders") {
+                        self.router.set(Route::ThreeD);
+                    }
+                    ui.same_line(0.0);
+                    if ui.button(None, "Copy Errors") {
+                        if let Some(err) = &self.threed_state.shader_error {
+                            use std::io::Write;
+                            use std::process::{Command, Stdio};
+                            if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
+                                if let Some(mut stdin) = child.stdin.take() {
+                                    let _ = stdin.write_all(err.as_bytes());
+                                }
+                                let _ = child.wait();
+                            }
+                        }
+                    }
+                    ui.separator();
+                    if let Some(err) = &self.threed_state.shader_error {
+                        let max_width = screen_width() - 40.0;
+                        let char_width = 10.0; // Rough estimate for mono font
+                        let max_chars = (max_width / char_width) as usize;
+
+                        for line in err.lines() {
+                            if line.len() > max_chars {
+                                // Simple wrap for long lines
+                                let mut start = 0;
+                                while start < line.len() {
+                                    let end = (start + max_chars).min(line.len());
+                                    ui.label(None, &line[start..end]);
+                                    start = end;
+                                }
+                            } else {
+                                ui.label(None, line);
+                            }
+                        }
+                    } else {
+                        ui.label(None, "No errors found.");
+                    }
                 });
             }
         }
