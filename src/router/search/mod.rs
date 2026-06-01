@@ -23,23 +23,35 @@ impl YomichanApp {
 
             if ui.button(None, "Search") && !self.search_query.is_empty() {
                 println!("Searching for: {}", self.search_query);
-                self.search_results = self.yomichan.search(&self.search_query).ok();
-                self.selected_segment = 0;
+                if let Ok(res) = self.yomichan.search(&self.search_query) {
+                    // Set selected segment to the first non-whitespace one
+                    self.selected_segment = res.segments
+                        .iter()
+                        .position(|s| !s.text.trim().is_empty())
+                        .unwrap_or(0);
+                    self.search_results = Some(res);
+                } else {
+                    self.search_results = None;
+                }
             }
 
             ui.separator();
 
             if let Some(res) = &self.search_results {
                 // Render segment selection buttons
-                ui.label(None, "Segments:");
+                //ui.label(None, "Segments:");
+                let mut rendered_count = 0;
                 for (i, segment) in res.segments.iter().enumerate() {
-                    let label = if segment.text.trim().is_empty() { " " } else { &segment.text };
-                    if i > 0 {
+                    if segment.text.trim().is_empty() {
+                        continue;
+                    }
+                    if rendered_count > 0 {
                         ui.same_line(0.0);
                     }
-                    if ui.button(None, label) {
+                    if ui.button(None, segment.text.as_str()) {
                         self.selected_segment = i;
                     }
+                    rendered_count += 1;
                 }
                 ui.separator();
 
