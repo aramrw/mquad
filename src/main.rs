@@ -73,8 +73,45 @@ impl YomichanApp {
             });
     }
 
-    // Add empty placeholder for now
-    fn import_results(&mut self) {}
+    fn import_results(&mut self) {
+        use macroquad::ui::widgets::Window;
+        use macroquad::ui::hash;
+
+        // Drain pending progress messages
+        while let Ok(msg) = self.progress_receiver.try_recv() {
+            self.import_status = msg;
+        }
+
+        Window::new(hash!(), vec2(10., 70.), vec2(400., 400.))
+            .label("Import Dictionary")
+            .ui(&mut root_ui(), |ui| {
+                ui.label(None, "Select a Yomitan .zip dictionary file:");
+                
+                if ui.button(None, "Open File Dialog") {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("zip", &["zip"]).pick_file() {
+                        self.import_status = format!("Selected: {:?}", path);
+                        let ycd = self.yomichan.clone();
+                        let tx = self.progress_sender.clone();
+                        
+                        std::thread::spawn(move || {
+                            let _ = tx.send("Starting import...".into());
+                            match ycd.import_dictionaries(&[path]) {
+                                Ok(_) => {
+                                    let _ = tx.send("Import complete!".into());
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(format!("Error: {:?}", e));
+                                }
+                            }
+                        });
+                    }
+                }
+
+                ui.separator();
+                ui.label(None, "Status:");
+                ui.label(None, &self.import_status);
+            });
+    }
 
     // Add empty placeholder for now
     fn search_results(&mut self) {}
