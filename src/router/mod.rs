@@ -34,11 +34,11 @@ impl YomichanApp {
 
         Window::new(
             hash!("ray_main_window"),
-            vec2(10., 10.),
-            vec2(screen_width() - 20., screen_height() - 30.),
+            vec2(0., 0.),
+            vec2(screen_width(), screen_height()),
         )
-        .label("Ray")
-        .titlebar(true)
+        .titlebar(false)
+        .movable(false)
         .ui(&mut root_ui(), |ui| {
             // Navigation Row
             ui.label(None, "Navigation:");
@@ -51,7 +51,7 @@ impl YomichanApp {
             }
             ui.same_line(0.0);
             ui.label(None, " | Lang:");
-            //ui.same_line(0.0);
+            ui.same_line(0.0);
             let old_lang = self.language_index;
             ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
                 .ui(ui, &mut self.language_index);
