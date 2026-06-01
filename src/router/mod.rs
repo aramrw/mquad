@@ -40,23 +40,20 @@ impl YomichanApp {
         .titlebar(false)
         .movable(false)
         .ui(&mut root_ui(), |ui| {
-            // Explicitly positioned Navigation Row
-            ui.label(None, "Ray |");
-            
-            ui.same_line(60.0);
+            // Line 1: Tab Navigation
+            ui.label(None, "Ray | Mode:");
+            ui.same_line(0.0);
             if ui.button(None, "Search") {
                 self.router.set(Route::Search);
             }
-            
-            ui.same_line(130.0);
+            ui.same_line(0.0);
             if ui.button(None, "Import") {
                 self.router.set(Route::Import);
             }
             
-            ui.same_line(200.0);
-            ui.label(None, "| Lang:");
-            
-            ui.same_line(260.0);
+            // Line 2: Settings/Language
+            ui.label(None, "Language:");
+            ui.same_line(0.0);
             let old_lang = self.language_index;
             ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
                 .ui(ui, &mut self.language_index);
