@@ -50,7 +50,7 @@ impl YomichanApp {
                 self.router.set(Route::Import);
             }
             ui.same_line(0.0);
-            ui.label(None, "| Lang:");
+            ui.label(None, " | Lang:");
             ui.same_line(0.0);
             let old_lang = self.language_index;
             ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
