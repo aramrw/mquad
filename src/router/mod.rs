@@ -1,3 +1,5 @@
+pub mod search;
+
 #[derive(Default, PartialEq, Eq, Clone, Copy)]
 pub enum Route {
     #[default]
