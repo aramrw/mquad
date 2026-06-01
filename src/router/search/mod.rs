@@ -3,7 +3,8 @@ use crate::YomichanApp;
 
 impl YomichanApp {
     pub fn draw_search_content(&mut self, ui: &mut Ui) {
-        ui.label(None, "Enter text:");
+        // I do not want this label. do not uncomment it.
+        //ui.label(None, "Enter text:");
         InputText::new(hash!("search_input")).ui(ui, &mut self.search_query);
 
         if ui.button(None, "Search") && !self.search_query.is_empty() {
@@ -29,13 +30,14 @@ impl YomichanApp {
                 }
                 if rendered_count > 0 {
                     ui.same_line(0.0);
+                    ui.label(None, "·");
+                    ui.same_line(0.0);
                 }
                 if ui.button(None, segment.text.as_str()) {
                     self.selected_segment = i;
                 }
                 rendered_count += 1;
-            }
-            ui.separator();
+            }            ui.separator();
 
             // Render selected segment definitions
             if let Some(segment) = res.segments.get(self.selected_segment) {
