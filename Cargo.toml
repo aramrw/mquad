@@ -10,3 +10,4 @@ yomichan_rs = { path = "../yomichan/yomichan_rs_workspace/yomichan_rs", features
 rfd = "0.14.1"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+tracing-core = "0.1.36"

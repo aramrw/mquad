@@ -2428,6 +2428,7 @@ dependencies = [
  "macroquad",
  "rfd",
  "tracing",
+ "tracing-core",
  "tracing-subscriber",
  "yomichan_rs",
 ]
