@@ -40,8 +40,11 @@ impl YomichanApp {
         .titlebar(false)
         .movable(false)
         .ui(&mut root_ui(), |ui| {
-            // Line 1: Tab Navigation
-            ui.label(None, "Ray | Mode:");
+            // Row 1: Brand
+            ui.label(None, "--- RAY DICTIONARY ---");
+            
+            // Row 2: Mode Selection
+            ui.label(None, "Mode:");
             ui.same_line(0.0);
             if ui.button(None, "Search") {
                 self.router.set(Route::Search);
@@ -51,7 +54,7 @@ impl YomichanApp {
                 self.router.set(Route::Import);
             }
             
-            // Line 2: Settings/Language
+            // Row 3: Language Selection
             ui.label(None, "Language:");
             ui.same_line(0.0);
             let old_lang = self.language_index;
