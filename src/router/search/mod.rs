@@ -1,10 +1,10 @@
-use macroquad::ui::{hash, widgets::InputText, Ui};
+use macroquad::ui::{Ui, hash, widgets::InputText};
 
 use crate::YomichanApp;
 
 impl YomichanApp {
     pub fn draw_search_content(&mut self, ui: &mut Ui) {
-        use macroquad::input::{is_key_pressed, KeyCode};
+        use macroquad::input::{KeyCode, is_key_pressed};
 
         InputText::new(hash!("search_input")).ui(ui, &mut self.search_query);
 
@@ -55,7 +55,6 @@ impl YomichanApp {
             self.refresh_cache();
         }
 
-        // Render cached segment definitions
         if let Some(res) = &self.search_results {
             if self.cached_entries.is_empty() && !res.segments.is_empty() {
                 // Handle edge case where first segment has no entries but wasn't skipped
@@ -67,6 +66,7 @@ impl YomichanApp {
             }
         }
 
+        // Render cached segment definitions
         for entry in &self.cached_entries {
             ui.label(None, &entry.headword);
             for def in &entry.definitions {
