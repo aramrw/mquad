@@ -172,7 +172,7 @@ async fn main() {
         ..Default::default()
     };
 
-    let ycd = Arc::new(Yomichan::new("db.ycd").expect("Failed to init database"));
+    let ycd = Arc::new(Yomichan::new(".").expect("Failed to init database"));
     
     let mut app = YomichanApp {
         router: Router::default(),
