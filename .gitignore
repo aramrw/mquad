@@ -1,3 +1,5 @@
 /target
 docs/
-yomichan_rs/db.ycd
+yomichan_rs/
+*.db
+.*db.*
