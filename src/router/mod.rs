@@ -3,7 +3,6 @@ pub mod search;
 pub mod threed;
 
 use macroquad::{
-    math::vec2,
     ui::root_ui,
     window::{screen_height, screen_width},
 };
@@ -32,65 +31,48 @@ impl Router {
 impl YomichanApp {
     pub fn draw_ui(&mut self) {
         use macroquad::ui::hash;
-        use macroquad::ui::widgets::{ComboBox, Window};
+        use macroquad::ui::widgets::ComboBox;
 
-        Window::new(
-            hash!("ray_main_window"),
-            vec2(0., 0.),
-            vec2(screen_width(), screen_height()),
-        )
-        .titlebar(false)
-        .movable(false)
-        .ui(&mut root_ui(), |ui| {
-            // Header spacing
-            ui.label(None, "");
-            
-            // Row 1: Brand / Title
-            ui.label(None, "RAY DICTIONARY");
-            ui.separator();
-            ui.label(None, "");
-            
-            // Row 2: Mode Selection
-            ui.label(None, "Navigation Mode");
-            if ui.button(None, "Search") {
-                self.router.set(Route::Search);
-            }
-            ui.same_line(0.0);
-            if ui.button(None, "Import") {
-                self.router.set(Route::Import);
-            }
-            ui.same_line(0.0);
-            if ui.button(None, "Shaders") {
-                self.router.set(Route::ThreeD);
-            }
-            
-            ui.label(None, "");
+        let ui = &mut root_ui();
 
-            // Row 3: Language Selection
-            ui.label(None, "Dictionary Language");
-            let old_lang = self.language_index;
-            ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
-                .ui(ui, &mut self.language_index);
-            
-            ui.label(None, "");
-            ui.separator();
-            ui.label(None, "");
+        // --- COMPACT NAVIGATION (Top) ---
+        if ui.button(None, "Search") {
+            self.router.set(Route::Search);
+        }
+        ui.same_line(0.0);
+        if ui.button(None, "Import") {
+            self.router.set(Route::Import);
+        }
+        ui.same_line(0.0);
+        if ui.button(None, "Shaders") {
+            self.router.set(Route::ThreeD);
+        }
+        
+        ui.separator();
 
-            if old_lang != self.language_index {
-                let iso = if self.language_index == 0 { "ja" } else { "es" };
-                if let Ok(_) = self.yomichan.set_language(iso) {
-                    let _ = self.yomichan.save_settings();
-                    self.search_results = None;
-                    self.cached_entries.clear();
-                }
-            }
+        // --- LANGUAGE SELECTOR ---
+        ui.label(None, "Lang:");
+        ui.same_line(0.0);
+        let old_lang = self.language_index;
+        ComboBox::new(hash!("lang_selector"), &["Japanese", "Spanish"])
+            .ui(ui, &mut self.language_index);
 
-            // Content Area
-            match self.router.c_route {
-                Route::Search => self.draw_search_content(ui),
-                Route::Import => self.draw_import_content(ui),
-                Route::ThreeD => self.draw_threed_tab(ui),
+        if old_lang != self.language_index {
+            let iso = if self.language_index == 0 { "ja" } else { "es" };
+            if let Ok(_) = self.yomichan.set_language(iso) {
+                let _ = self.yomichan.save_settings();
+                self.search_results = None;
+                self.cached_entries.clear();
             }
-        });
+        }
+
+        ui.separator();
+
+        // --- CONTENT AREA ---
+        match self.router.c_route {
+            Route::Search => self.draw_search_content(ui),
+            Route::Import => self.draw_import_content(ui),
+            Route::ThreeD => self.draw_threed_tab(ui),
+        }
     }
 }
