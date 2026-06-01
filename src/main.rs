@@ -45,6 +45,7 @@ struct YomichanApp {
     import_status: String,
     progress_receiver: mpsc::Receiver<String>,
     progress_sender: mpsc::Sender<String>,
+    language_index: usize,
 }
 
 impl YomichanApp {
@@ -58,9 +59,9 @@ impl YomichanApp {
 
     fn nav_buttons(&mut self) {
         use macroquad::ui::hash;
-        use macroquad::ui::widgets::Window;
+        use macroquad::ui::widgets::{Window, ComboBox};
 
-        Window::new(hash!(), vec2(10., 10.), vec2(200., 50.))
+        Window::new(hash!(), vec2(10., 10.), vec2(400., 50.))
             .label("Navigation")
             .titlebar(true)
             .ui(&mut root_ui(), |ui| {
@@ -70,6 +71,20 @@ impl YomichanApp {
                 ui.same_line(0.0);
                 if ui.button(None, "Import") {
                     self.router.set(Route::Import);
+                }
+                ui.same_line(0.0);
+                ui.label(None, "Lang:");
+                ui.same_line(0.0);
+                let old_lang = self.language_index;
+                ComboBox::new(hash!(), &["Japanese", "Spanish"])
+                    .ui(ui, &mut self.language_index);
+                if old_lang != self.language_index {
+                    let iso = if self.language_index == 0 { "ja" } else { "es" };
+                    if let Ok(_) = self.yomichan.set_language(iso) {
+                        let _ = self.yomichan.save_settings();
+                        // clear search results on language change
+                        self.search_results = None;
+                    }
                 }
             });
     }
@@ -182,6 +197,7 @@ async fn main() {
         import_status: String::new(),
         progress_receiver: rx,
         progress_sender: tx,
+        language_index: 0,
     };
 
     loop {
