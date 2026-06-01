@@ -1,5 +1,5 @@
-use macroquad::ui::Ui;
 use crate::YomichanApp;
+use macroquad::ui::Ui;
 
 impl YomichanApp {
     pub fn draw_import_content(&mut self, ui: &mut Ui) {
