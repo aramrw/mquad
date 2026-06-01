@@ -113,8 +113,47 @@ impl YomichanApp {
             });
     }
 
-    // Add empty placeholder for now
-    fn search_results(&mut self) {}
+    fn search_results(&mut self) {
+        use macroquad::ui::widgets::{Window, InputText};
+        use macroquad::ui::hash;
+
+        Window::new(hash!(), vec2(10., 70.), vec2(400., 400.))
+            .label("Dictionary Search")
+            .ui(&mut root_ui(), |ui| {
+                ui.label(None, "Enter Japanese text:");
+                InputText::new(hash!()).ui(ui, &mut self.search_query);
+
+                if ui.button(None, "Search") && !self.search_query.is_empty() {
+                    println!("Searching for: {}", self.search_query);
+                }
+                
+                ui.separator();
+
+                if let Ok(res) = self.yomichan.search(&self.search_query) {
+                    for segment in res.segments {
+                        if segment.entries.is_empty() {
+                            ui.label(None, &format!("No results for: {}", segment.text));
+                            continue;
+                        }
+                        for entry in segment.entries {
+                            let headword_str = entry.headwords
+                                .iter()
+                                .map(|h| format!("{} ({})", h.term.clone(), h.reading.clone()))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            ui.label(None, &headword_str);
+                            
+                            for def in entry.definitions {
+                                for group in def.entries {
+                                    ui.label(None, &format!("- {}", group.plain_text));
+                                }
+                            }
+                            ui.separator();
+                        }
+                    }
+                }
+            });
+    }
 }
 
 #[main("...")]
