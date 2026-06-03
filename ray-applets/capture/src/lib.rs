@@ -44,29 +44,24 @@ impl CaptureApplet {
     }
 
     fn save_settings(&self) -> Result<()> {
-        let conn = rusqlite::Connection::open("framework_settings.db")?;
+        let conn = rusqlite::Connection::open(\"framework_settings.db\")?;
         conn.execute(
-            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
-            rusqlite::params!["capture", "audio_enabled", self.audio_enabled.to_string()],
-        )?;
-        conn.execute(
-            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
-            rusqlite::params!["capture", "audio_device_index", self.audio_device_index.to_string()],
+            \"INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)\",
+            rusqlite::params![\"capture\", \"audio_enabled\", self.audio_enabled.to_string()],
         )?;
         Ok(())
     }
 
     fn load_settings(&mut self) {
-        if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
-            let mut stmt = conn.prepare("SELECT key, value FROM applet_configs WHERE applet = ?1").ok().unwrap();
-            let rows = stmt.query_map(rusqlite::params!["capture"], |row| {
+        if let Ok(conn) = rusqlite::Connection::open(\"framework_settings.db\") {
+            let mut stmt = conn.prepare(\"SELECT key, value FROM applet_configs WHERE applet = ?1\").ok().unwrap();
+            let rows = stmt.query_map(rusqlite::params![\"capture\"], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             }).ok().unwrap();
 
             for row in rows.flatten() {
                 match row.0.as_str() {
-                    "audio_enabled" => self.audio_enabled = row.1.parse().unwrap_or(false),
-                    "audio_device_index" => self.audio_device_index = row.1.parse().unwrap_or(1),
+                    \"audio_enabled\" => self.audio_enabled = row.1.parse().unwrap_or(false),
                     _ => {}
                 }
             }
@@ -372,11 +367,10 @@ impl RayExtension for CaptureApplet {
         ui.label(None, "Video Recording:");
         
         let old_audio = self.audio_enabled;
-        ui.checkbox(hash!("audio_enabled"), "Include Audio", &mut self.audio_enabled);
+        ui.checkbox(hash!(\"audio_enabled\"), \"Include Audio\", &mut self.audio_enabled);
         if self.audio_enabled != old_audio {
             let _ = self.save_settings();
         }
-        ui.label(None, &format!("Audio Device Index: {}", self.audio_device_index));
         
         let mut crf = self.crf as f32;
         ui.slider(hash!("crf_slider"), "Quality (CRF, lower is better)", 0.0..51.0, &mut crf);
