@@ -2648,6 +2648,7 @@ name = "ray-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "bitflags 2.11.1",
  "clap",
  "crossbeam-channel",
@@ -2695,6 +2696,7 @@ name = "ray-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "clap",
  "crossbeam-channel",
  "macroquad",
