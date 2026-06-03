@@ -76,6 +76,20 @@ impl<'a> RayContext<'a> {
             }
         }
     }
+
+    /// Writes an image to the system clipboard.
+    pub fn clipboard_write_image(&mut self, width: usize, height: usize, rgba_pixels: &[u8]) {
+        if let Some(cb) = self.clipboard.as_mut() {
+            let image = arboard::ImageData {
+                width,
+                height,
+                bytes: std::borrow::Cow::Borrowed(rgba_pixels),
+            };
+            if let Err(e) = cb.set_image(image) {
+                tracing::error!("Clipboard image write error: {}", e);
+            }
+        }
+    }
 }
 
 /// Defines the scope in which a hotkey is active.

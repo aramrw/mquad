@@ -4,7 +4,8 @@ use anyhow::Result;
 
 pub struct CaptureApplet {
     active: bool,
-    snapshot: Option<Texture2D>,
+    snapshot_tex: Option<Texture2D>,
+    snapshot_raw: Option<image::RgbaImage>,
     selection_start: Option<Vec2>,
     selection_end: Option<Vec2>,
 }
@@ -13,7 +14,8 @@ impl CaptureApplet {
     pub fn new() -> Self {
         Self {
             active: false,
-            snapshot: None,
+            snapshot_tex: None,
+            snapshot_raw: None,
             selection_start: None,
             selection_end: None,
         }
@@ -26,10 +28,50 @@ impl CaptureApplet {
             let width = image.width();
             let height = image.height();
             
-            // xcap::RgbaImage is image::RgbaImage
             let pixels = image.as_raw();
             let texture = Texture2D::from_rgba8(width as u16, height as u16, pixels);
-            self.snapshot = Some(texture);
+            self.snapshot_tex = Some(texture);
+            self.snapshot_raw = Some(image);
+        }
+        Ok(())
+    }
+
+    fn finalize_selection(&mut self, ctx: &mut RayContext) -> Result<()> {
+        if let (Some(start), Some(end), Some(raw)) = (self.selection_start, self.selection_end, &self.snapshot_raw) {
+            let x = start.x.min(end.x);
+            let y = start.y.min(end.y);
+            let w = (start.x - end.x).abs();
+            let h = (start.y - end.y).abs();
+
+            if w > 1.0 && h > 1.0 {
+                let sw = screen_width();
+                let sh = screen_height();
+                let iw = raw.width() as f32;
+                let ih = raw.height() as f32;
+                
+                let scale_x = iw / sw;
+                let scale_y = ih / sh;
+                
+                let ix = (x * scale_x) as u32;
+                let iy = (y * scale_y) as u32;
+                let iw_crop = (w * scale_x).min(iw - ix as f32) as u32;
+                let ih_crop = (h * scale_y).min(ih - iy as f32) as u32;
+                
+                if iw_crop > 0 && ih_crop > 0 {
+                    use image::GenericImageView;
+                    let cropped = raw.view(ix, iy, iw_crop, ih_crop).to_image();
+                    
+                    // Save to file
+                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+                    let filename = format!("screenshot_{}.png", timestamp);
+                    cropped.save(&filename)?;
+                    
+                    // Copy to clipboard
+                    ctx.clipboard_write_image(iw_crop as usize, ih_crop as usize, cropped.as_raw());
+                    
+                    tracing::info!("Screenshot saved to {} and copied to clipboard", filename);
+                }
+            }
         }
         Ok(())
     }
@@ -69,7 +111,8 @@ impl RayExtension for CaptureApplet {
 
         if is_key_pressed(KeyCode::Escape) {
             self.active = false;
-            self.snapshot = None;
+            self.snapshot_tex = None;
+            self.snapshot_raw = None;
             ctx.send_command(RayCommand::ToggleOverlay(false));
         }
 
@@ -81,10 +124,11 @@ impl RayExtension for CaptureApplet {
             let (mx, my) = mouse_position();
             self.selection_end = Some(vec2(mx, my));
         } else if is_mouse_button_released(MouseButton::Left) {
-            // Task 3 will implement cropping and saving
+            self.finalize_selection(ctx)?;
             self.active = false;
             ctx.send_command(RayCommand::ToggleOverlay(false));
-            self.snapshot = None;
+            self.snapshot_tex = None;
+            self.snapshot_raw = None;
         }
 
         Ok(())
@@ -93,7 +137,7 @@ impl RayExtension for CaptureApplet {
     fn render(&mut self, _ctx: &mut RayContext) -> Result<()> {
         if !self.active { return Ok(()); }
 
-        if let Some(tex) = &self.snapshot {
+        if let Some(tex) = &self.snapshot_tex {
             draw_texture_ex(tex, 0.0, 0.0, WHITE, DrawTextureParams {
                 dest_size: Some(vec2(screen_width(), screen_height())),
                 ..Default::default()
