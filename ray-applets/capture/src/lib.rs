@@ -44,24 +44,24 @@ impl CaptureApplet {
     }
 
     fn save_settings(&self) -> Result<()> {
-        let conn = rusqlite::Connection::open(\"framework_settings.db\")?;
+        let conn = rusqlite::Connection::open("framework_settings.db")?;
         conn.execute(
-            \"INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)\",
-            rusqlite::params![\"capture\", \"audio_enabled\", self.audio_enabled.to_string()],
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["capture", "audio_enabled", self.audio_enabled.to_string()],
         )?;
         Ok(())
     }
 
     fn load_settings(&mut self) {
-        if let Ok(conn) = rusqlite::Connection::open(\"framework_settings.db\") {
-            let mut stmt = conn.prepare(\"SELECT key, value FROM applet_configs WHERE applet = ?1\").ok().unwrap();
-            let rows = stmt.query_map(rusqlite::params![\"capture\"], |row| {
+        if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
+            let mut stmt = conn.prepare("SELECT key, value FROM applet_configs WHERE applet = ?1").ok().unwrap();
+            let rows = stmt.query_map(rusqlite::params!["capture"], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             }).ok().unwrap();
 
             for row in rows.flatten() {
                 match row.0.as_str() {
-                    \"audio_enabled\" => self.audio_enabled = row.1.parse().unwrap_or(false),
+                    "audio_enabled" => self.audio_enabled = row.1.parse().unwrap_or(false),
                     _ => {}
                 }
             }
@@ -218,26 +218,26 @@ impl RayExtension for CaptureApplet {
 
     fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> Result<()> {
         match event {
-            RayEvent::HotkeyTriggered(id) if id == \"region_screenshot\" => {
+            RayEvent::HotkeyTriggered(id) if id == "region_screenshot" => {
                 if self.recording_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Screenshot;
-                    ctx.send_command(RayCommand::SelectExtension(\"Capture\".to_string()));
+                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
                     self.selection_end = None;
                 }
             }
-            RayEvent::HotkeyTriggered(id) if id == \"region_video\" => {
+            RayEvent::HotkeyTriggered(id) if id == "region_video" => {
                 if self.recording_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Video;
-                    ctx.send_command(RayCommand::SelectExtension(\"Capture\".to_string()));
+                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
@@ -315,7 +315,6 @@ impl RayExtension for CaptureApplet {
 
         if !self.active { return Ok(()); }
         
-        // ... rest of render ...
         if let Some(tex) = &self.snapshot_tex {
             draw_texture_ex(tex, 0.0, 0.0, WHITE, DrawTextureParams {
                 dest_size: Some(vec2(screen_width(), screen_height())),
@@ -367,7 +366,7 @@ impl RayExtension for CaptureApplet {
         ui.label(None, "Video Recording:");
         
         let old_audio = self.audio_enabled;
-        ui.checkbox(hash!(\"audio_enabled\"), \"Include Audio\", &mut self.audio_enabled);
+        ui.checkbox(hash!("audio_enabled"), "Include Audio", &mut self.audio_enabled);
         if self.audio_enabled != old_audio {
             let _ = self.save_settings();
         }
