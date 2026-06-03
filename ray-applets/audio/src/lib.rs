@@ -21,6 +21,8 @@ pub struct AudioApplet {
     error_log: String,
     device_list: String,
     show_log_window: bool,
+    last_spectrum_time: f64,
+    spectrum_throttle_ms: f32,
 }
 
 impl AudioApplet {
@@ -38,6 +40,8 @@ impl AudioApplet {
             error_log: String::new(),
             device_list: String::new(),
             show_log_window: false,
+            last_spectrum_time: 0.0,
+            spectrum_throttle_ms: 0.0,
         }
     }
 
@@ -166,6 +170,25 @@ impl RayExtension for AudioApplet {
         Ok(())
     }
 
+    fn has_settings(&self) -> bool {
+        true
+    }
+
+    fn settings_ui(&mut self, _ctx: &mut RayContext, ui: &mut macroquad::ui::Ui) -> anyhow::Result<()> {
+        use macroquad::ui::hash;
+        ui.label(None, "Performance Settings:");
+        ui.slider(hash!("aud_fft_thr"), "FFT Throttle (ms)", 0.0..500.0, &mut self.spectrum_throttle_ms);
+        ui.label(None, "0ms = Every Frame (High CPU)");
+        
+        ui.separator();
+        ui.label(None, "Audio Devices:");
+        if ui.button(None, "Refresh Device List") {
+            self.list_devices();
+        }
+        
+        Ok(())
+    }
+
     fn update(&mut self, ctx: &mut RayContext) -> anyhow::Result<()> {
         if let Some(erx) = &self.error_receiver {
             while let Ok(err) = erx.try_recv() {
@@ -185,6 +208,8 @@ impl RayExtension for AudioApplet {
                 if !samples.is_empty() {
                     self.current_volume = samples.iter().map(|s| s.abs()).sum::<f32>() / samples.len() as f32;
                     ctx.bus.send(RayEvent::Audio(AudioEvent::Level(self.current_volume)));
+                    
+                    // Send buffers to others even if in background
                     ctx.bus.send(RayEvent::Audio(AudioEvent::Buffer(samples.clone())));
                 }
 
@@ -197,20 +222,25 @@ impl RayExtension for AudioApplet {
             }
 
             if received {
-                if self.buffer.len() >= 1024 {
-                    let mut fft_input = [0.0f32; 1024];
-                    for (i, &s) in self.buffer.iter().take(1024).enumerate() {
-                        let window = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / 1023.0).cos());
-                        fft_input[i] = s * window;
-                    }
+                let now = get_time();
+                let throttle_sec = self.spectrum_throttle_ms as f64 / 1000.0;
+                if now - self.last_spectrum_time >= throttle_sec {
+                    self.last_spectrum_time = now;
+                    if self.buffer.len() >= 1024 {
+                        let mut fft_input = [0.0f32; 1024];
+                        for (i, &s) in self.buffer.iter().take(1024).enumerate() {
+                            let window = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / 1023.0).cos());
+                            fft_input[i] = s * window;
+                        }
 
-                    let res = microfft::real::rfft_1024(&mut fft_input);
-                    for i in 0..512 {
-                        let magnitude = (res[i].re.powi(2) + res[i].im.powi(2)).sqrt();
-                        let val = (magnitude * 50.0).log10().max(0.0) * 0.8;
-                        self.spectrum[i] = val.clamp(0.0, 1.0);
+                        let res = microfft::real::rfft_1024(&mut fft_input);
+                        for i in 0..512 {
+                            let magnitude = (res[i].re.powi(2) + res[i].im.powi(2)).sqrt();
+                            let val = (magnitude * 50.0).log10().max(0.0) * 0.8;
+                            self.spectrum[i] = val.clamp(0.0, 1.0);
+                        }
+                        ctx.bus.send(RayEvent::Audio(AudioEvent::Spectrum(self.spectrum.clone())));
                     }
-                    ctx.bus.send(RayEvent::Audio(AudioEvent::Spectrum(self.spectrum.clone())));
                 }
             }
         }

@@ -7,7 +7,15 @@ use std::str::FromStr;
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 
-#[macroquad::main("Ray")]
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Ray".to_owned(),
+        high_dpi: true,
+        ..Default::default()
+    }
+}
+
+#[macroquad::main(window_conf)]
 async fn main() {
     let mut engine = RayEngine::new("framework_settings.db");
     
@@ -36,6 +44,7 @@ async fn main() {
     let mut console_logs: Vec<ray_api::LogEvent> = Vec::new();
 
     loop {
+        let frame_start = std::time::Instant::now();
         clear_background(BLACK);
 
         #[cfg(target_os = "macos")]
@@ -126,6 +135,15 @@ async fn main() {
         }
 
         next_frame().await;
+
+        if !engine.vsync_enabled {
+            let target_fps = 60.0;
+            let target_frame_time = std::time::Duration::from_secs_f64(1.0 / target_fps);
+            let elapsed = frame_start.elapsed();
+            if elapsed < target_frame_time {
+                std::thread::sleep(target_frame_time - elapsed);
+            }
+        }
     }
 }
 
@@ -242,15 +260,34 @@ fn render_settings_ui(engine: &mut RayEngine, active_settings_idx: &mut Option<u
             if ui.button(None, if *settings_tab == 1 { "[ Hotkeys ]" } else { " Hotkeys " }) {
                 *settings_tab = 1;
             }
+            ui.same_line(0.0);
+            if ui.button(None, if *settings_tab == 2 { "[ Framework ]" } else { " Framework " }) {
+                *settings_tab = 2;
+            }
             ui.separator();
 
             if *settings_tab == 0 {
                 render_extensions_tab(engine, ui, active_settings_idx);
-            } else {
+            } else if *settings_tab == 1 {
                 render_hotkeys_tab(engine, ui);
+            } else {
+                render_framework_tab(engine, ui);
             }
         }
     });
+}
+
+fn render_framework_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
+    use macroquad::ui::hash;
+    ui.label(None, "Framework Configuration:");
+    ui.separator();
+    
+    let mut vsync = engine.vsync_enabled;
+    ui.checkbox(hash!("vsync_toggle"), "Enable VSync / Frame Limiter", &mut vsync);
+    if vsync != engine.vsync_enabled {
+        let _ = engine.set_vsync(vsync);
+    }
+    ui.label(None, "(VSync depends on OS/Driver support)");
 }
 
 fn render_extensions_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui, active_settings_idx: &mut Option<usize>) {

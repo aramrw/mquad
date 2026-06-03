@@ -46,6 +46,8 @@ pub struct RayContext<'a> {
     pub bus: &'a RayEventBus,
     /// Name of the applet currently using this context.
     pub applet_name: String,
+    /// True if the applet is currently being rendered/focused.
+    pub is_active: bool,
 }
 
 impl<'a> RayContext<'a> {

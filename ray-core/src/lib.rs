@@ -95,6 +95,7 @@ pub struct RayEngine {
     pub active_extension_idx: usize,
     db_path: String,
     pub hotkey_registry: HotkeyRegistry,
+    pub vsync_enabled: bool,
 }
 
 impl RayEngine {
@@ -114,6 +115,7 @@ impl RayEngine {
             active_extension_idx: 0,
             db_path: db_path.to_string(),
             hotkey_registry: HotkeyRegistry::default(),
+            vsync_enabled: true,
         };
         engine.ensure_db_schema().ok();
         engine
@@ -125,6 +127,13 @@ impl RayEngine {
             "CREATE TABLE IF NOT EXISTS extension_settings (
                 name TEXT PRIMARY KEY,
                 enabled INTEGER
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS framework_config (
+                key TEXT PRIMARY KEY,
+                value TEXT
             )",
             [],
         )?;
@@ -171,6 +180,8 @@ impl RayEngine {
 
     pub fn load_settings(&mut self) -> Result<()> {
         let conn = rusqlite::Connection::open(&self.db_path)?;
+        
+        // Load extension settings
         let mut stmt = conn.prepare("SELECT name, enabled FROM extension_settings")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? != 0))
@@ -185,6 +196,29 @@ impl RayEngine {
                 entry.enabled = enabled;
             }
         }
+
+        // Load framework settings
+        let mut stmt = conn.prepare("SELECT key, value FROM framework_config")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        for row in rows.flatten() {
+            if row.0 == "vsync_enabled" {
+                self.vsync_enabled = row.1 == "true";
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn set_vsync(&mut self, enabled: bool) -> Result<()> {
+        self.vsync_enabled = enabled;
+        let conn = rusqlite::Connection::open(&self.db_path)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO framework_config (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["vsync_enabled", if enabled { "true" } else { "false" }],
+        )?;
         Ok(())
     }
 
@@ -229,6 +263,7 @@ impl RayEngine {
                 screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
                 bus: &self.bus,
                 applet_name: entry.instance.name().to_string(),
+                is_active: true,
             };
             entry.instance.settings_ui(&mut ctx, ui)?;
         }
@@ -249,6 +284,7 @@ impl RayEngine {
                 screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
                 bus: &self.bus,
                 applet_name: entry.instance.name().to_string(),
+                is_active: false,
             };
             entry.instance.init(&mut ctx, args)?;
         }
@@ -285,11 +321,13 @@ impl RayEngine {
 
             for entry in &mut self.extensions {
                 if entry.enabled {
+                    let is_active = active_applet.as_ref().map_or(false, |name| name == entry.instance.name());
                     let mut ctx = RayContext {
                         delta_time: dt,
                         screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
                         bus: &self.bus,
                         applet_name: entry.instance.name().to_string(),
+                        is_active,
                     };
                     if let Err(e) = entry.instance.on_event(&mut ctx, &event) {
                         tracing::error!("[{}] on_event error: {}", entry.instance.name(), e);
@@ -300,11 +338,13 @@ impl RayEngine {
 
         for entry in &mut self.extensions {
             if entry.enabled {
+                let is_active = active_applet.as_ref().map_or(false, |name| name == entry.instance.name());
                 let mut ctx = RayContext {
                     delta_time: dt,
                     screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
                     bus: &self.bus,
                     applet_name: entry.instance.name().to_string(),
+                    is_active,
                 };
                 if let Err(e) = entry.instance.update(&mut ctx) {
                     tracing::error!("[{}] update error: {}", entry.instance.name(), e);
@@ -325,6 +365,7 @@ impl RayEngine {
                         screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
                         bus: &self.bus,
                         applet_name: entry.instance.name().to_string(),
+                        is_active: true,
                     };
                     if let Err(e) = entry.instance.render(&mut ctx) {
                         tracing::error!("[{}] render error: {}", entry.instance.name(), e);
