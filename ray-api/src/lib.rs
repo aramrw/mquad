@@ -169,6 +169,8 @@ pub enum RayCommand {
     RegisterHotkey(String, HotkeyDefinition),
     /// Toggles the framework overlay mode.
     ToggleOverlay(bool),
+    /// Toggles the framework mini mode (shrunk window).
+    MiniMode(bool),
 }
 
 /// Audio system control commands.

@@ -17,6 +17,9 @@ pub struct CaptureApplet {
     selection_end: Option<Vec2>,
     recording_process: Option<std::process::Child>,
     recording_filename: Option<String>,
+    crf: i32,
+    fps: i32,
+    save_dir: String,
 }
 
 impl CaptureApplet {
@@ -30,10 +33,13 @@ impl CaptureApplet {
             selection_end: None,
             recording_process: None,
             recording_filename: None,
+            crf: 23,
+            fps: 30,
+            save_dir: ".".to_string(),
         }
     }
 
-    fn start_recording(&mut self) -> Result<()> {
+    fn start_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
         if let (Some(start), Some(end)) = (self.selection_start, self.selection_end) {
             let x = start.x.min(end.x) as u32;
             let y = start.y.min(end.y) as u32;
@@ -42,7 +48,8 @@ impl CaptureApplet {
 
             if w > 10 && h > 10 {
                 let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-                let filename = format!("recording_{}.mp4", timestamp);
+                let path = std::path::Path::new(&self.save_dir).join(format!("recording_{}.mp4", timestamp));
+                let filename = path.to_str().unwrap().to_string();
                 
                 #[cfg(target_os = "macos")]
                 let (input_format, input_device) = ("avfoundation", "1:none");
@@ -51,27 +58,26 @@ impl CaptureApplet {
                 #[cfg(not(any(target_os = "macos", windows)))]
                 let (input_format, input_device) = ("x11grab", ":0.0");
 
-                // Base command
                 let mut cmd = std::process::Command::new("ffmpeg");
-                cmd.args(&["-f", input_format, "-i", input_device]);
+                cmd.args(&["-f", input_format, "-framerate", &self.fps.to_string(), "-i", input_device]);
 
-                // Crop and Encode
-                // Note: Coordinates might need scaling for Retina/HighDPI
                 let crop_filter = format!("crop={}:{}:{}:{}", w, h, x, y);
-                cmd.args(&["-vf", &crop_filter, "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p", &filename]);
+                cmd.args(&["-vf", &crop_filter, "-c:v", "libx264", "-crf", &self.crf.to_string(), "-pix_fmt", "yuv420p", &filename]);
 
                 let child = cmd.spawn()?;
                 self.recording_process = Some(child);
                 self.recording_filename = Some(filename);
+                ctx.send_command(RayCommand::MiniMode(true));
                 tracing::info!("Started recording to {}", self.recording_filename.as_ref().unwrap());
             }
         }
         Ok(())
     }
 
-    fn stop_recording(&mut self) -> Result<()> {
+    fn stop_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
         if let Some(mut child) = self.recording_process.take() {
-            child.kill()?;
+            let _ = child.kill();
+            ctx.send_command(RayCommand::MiniMode(false));
             tracing::info!("Stopped recording. Saved to {:?}", self.recording_filename.take());
         }
         Ok(())
@@ -117,12 +123,11 @@ impl CaptureApplet {
                     use image::GenericImageView;
                     let cropped = raw.view(ix, iy, iw_crop, ih_crop).to_image();
                     
-                    // Save to file
                     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-                    let filename = format!("screenshot_{}.png", timestamp);
+                    let path = std::path::Path::new(&self.save_dir).join(format!("screenshot_{}.png", timestamp));
+                    let filename = path.to_str().unwrap().to_string();
                     cropped.save(&filename)?;
                     
-                    // Copy to clipboard
                     ctx.clipboard_write_image(iw_crop as usize, ih_crop as usize, cropped.as_raw());
                     
                     tracing::info!("Screenshot saved to {} and copied to clipboard", filename);
@@ -160,7 +165,7 @@ impl RayExtension for CaptureApplet {
         match event {
             RayEvent::HotkeyTriggered(id) if id == "region_screenshot" => {
                 if self.recording_process.is_some() {
-                    self.stop_recording()?;
+                    self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Screenshot;
@@ -172,7 +177,7 @@ impl RayExtension for CaptureApplet {
             }
             RayEvent::HotkeyTriggered(id) if id == "region_video" => {
                 if self.recording_process.is_some() {
-                    self.stop_recording()?;
+                    self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Video;
@@ -188,6 +193,17 @@ impl RayExtension for CaptureApplet {
     }
 
     fn update(&mut self, ctx: &mut RayContext) -> Result<()> {
+        if self.recording_process.is_some() {
+            // Check if process is still running
+            if let Some(proc) = &mut self.recording_process {
+                if let Ok(Some(_status)) = proc.try_wait() {
+                    self.recording_process = None;
+                    self.recording_filename = None;
+                    ctx.send_command(RayCommand::MiniMode(false));
+                }
+            }
+        }
+
         if !self.active { return Ok(()); }
 
         if is_key_pressed(KeyCode::Escape) {
@@ -208,7 +224,7 @@ impl RayExtension for CaptureApplet {
             if self.mode == CaptureMode::Screenshot {
                 self.finalize_selection(ctx)?;
             } else {
-                self.start_recording()?;
+                self.start_recording(ctx)?;
             }
             self.active = false;
             ctx.send_command(RayCommand::ToggleOverlay(false));
@@ -219,9 +235,17 @@ impl RayExtension for CaptureApplet {
         Ok(())
     }
 
-    fn render(&mut self, _ctx: &mut RayContext) -> Result<()> {
-        if !self.active { return Ok(()); }
+    fn render(&mut self, ctx: &mut RayContext) -> Result<()> {
+        if self.recording_process.is_some() {
+            draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(40, 40, 40, 255));
+            draw_circle(30.0, 30.0, 10.0, RED);
+            draw_text("REC", 50.0, 38.0, 30.0, WHITE);
+            return Ok(());
+        }
 
+        if !self.active { return Ok(()); }
+        
+        // ... rest of render ...
         if let Some(tex) = &self.snapshot_tex {
             draw_texture_ex(tex, 0.0, 0.0, WHITE, DrawTextureParams {
                 dest_size: Some(vec2(screen_width(), screen_height())),
@@ -243,11 +267,43 @@ impl RayExtension for CaptureApplet {
             draw_rectangle(x + w, y, screen_width() - (x + w), h, Color::from_rgba(0, 0, 0, 150)); // Right
 
             draw_rectangle_lines(x, y, w, h, 2.0, RED);
+            
+            let label = if self.mode == CaptureMode::Screenshot { "SCREENSHOT" } else { "RECORD" };
+            draw_text(label, x, y - 5.0, 20.0, RED);
         } else {
             // Full screen dim
             draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
+            draw_text("Select Region (ESC to cancel)", 20.0, 30.0, 25.0, WHITE);
         }
 
+        Ok(())
+    }
+
+    fn has_settings(&self) -> bool { true }
+
+    fn settings_ui(&mut self, _ctx: &mut RayContext, ui: &mut macroquad::ui::Ui) -> Result<()> {
+        use macroquad::ui::hash;
+        ui.label(None, "Capture Settings");
+        ui.separator();
+        
+        ui.label(None, &format!("Save Directory: {}", self.save_dir));
+        if ui.button(None, "Change Directory...") {
+            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                self.save_dir = path.to_string_lossy().into_owned();
+            }
+        }
+        
+        ui.separator();
+        ui.label(None, "Video Recording:");
+        
+        let mut crf = self.crf as f32;
+        ui.slider(hash!("crf_slider"), "Quality (CRF, lower is better)", 0.0..51.0, &mut crf);
+        self.crf = crf as i32;
+        
+        let mut fps = self.fps as f32;
+        ui.slider(hash!("fps_slider"), "Framerate (FPS)", 10.0..60.0, &mut fps);
+        self.fps = fps as i32;
+        
         Ok(())
     }
 }

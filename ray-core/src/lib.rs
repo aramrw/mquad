@@ -97,6 +97,7 @@ pub struct RayEngine {
     pub hotkey_registry: HotkeyRegistry,
     pub vsync_enabled: bool,
     pub overlay_active: bool,
+    pub mini_mode: bool,
     clipboard: Option<arboard::Clipboard>,
 }
 
@@ -119,6 +120,7 @@ impl RayEngine {
             hotkey_registry: HotkeyRegistry::default(),
             vsync_enabled: true,
             overlay_active: false,
+            mini_mode: false,
             clipboard: arboard::Clipboard::new().ok(),
         };
         engine.ensure_db_schema().ok();
@@ -332,6 +334,9 @@ impl RayEngine {
                     }
                     ray_api::RayCommand::ToggleOverlay(active) => {
                         self.toggle_overlay(*active);
+                    }
+                    ray_api::RayCommand::MiniMode(active) => {
+                        self.mini_mode = *active;
                     }
                     _ => {}
                 }

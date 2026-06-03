@@ -46,6 +46,7 @@ async fn main() {
     let mut show_console = false;
     let mut console_logs: Vec<ray_api::LogEvent> = Vec::new();
     let mut last_overlay_active = false;
+    let mut last_mini_mode = false;
 
     loop {
         let frame_start = std::time::Instant::now();
@@ -60,6 +61,16 @@ async fn main() {
         if engine.overlay_active != last_overlay_active {
             update_window_overlay(engine.overlay_active);
             last_overlay_active = engine.overlay_active;
+        }
+
+        // Handle Mini Mode Changes
+        if engine.mini_mode != last_mini_mode {
+            if engine.mini_mode {
+                request_new_screen_size(200.0, 60.0);
+            } else {
+                request_new_screen_size(800.0, 600.0);
+            }
+            last_mini_mode = engine.mini_mode;
         }
 
         // Sync and Poll OS hotkeys
