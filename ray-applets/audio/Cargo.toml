@@ -9,3 +9,4 @@ macroquad = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 microfft = { workspace = true }
+rusqlite = { workspace = true }

@@ -131,6 +131,29 @@ impl AudioApplet {
         self.receiver = None;
         self.error_receiver = None;
     }
+
+    fn save_device_index(&self) -> anyhow::Result<()> {
+        let conn = rusqlite::Connection::open("framework_settings.db")?;
+        conn.execute(
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["audio", "device_index", self.device_index.to_string()],
+        )?;
+        Ok(())
+    }
+
+    fn load_device_index() -> i32 {
+        if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
+            let mut stmt = conn.prepare("SELECT value FROM applet_configs WHERE applet = ?1 AND key = ?2").ok().unwrap();
+            if let Ok(val) = stmt.query_row(rusqlite::params!["audio", "device_index"], |row| row.get::<_, String>(0)) {
+                return val.parse().unwrap_or(1);
+            }
+        }
+        1
+    }
+
+    fn broadcast_device_index(&self, ctx: &RayContext) {
+        ctx.bus.send(RayEvent::Audio(AudioEvent::DeviceSelected(self.device_index)));
+    }
 }
 
 impl RayExtension for AudioApplet {
@@ -139,6 +162,9 @@ impl RayExtension for AudioApplet {
     }
 
     fn init(&mut self, ctx: &mut RayContext, _args: &clap::ArgMatches) -> anyhow::Result<()> {
+        self.device_index = Self::load_device_index();
+        self.broadcast_device_index(ctx);
+
         ctx.register_hotkey(HotkeyDefinition {
             id: "toggle_recording".to_string(),
             key: "R".to_string(),
@@ -182,6 +208,16 @@ impl RayExtension for AudioApplet {
         
         ui.separator();
         ui.label(None, "Audio Devices:");
+        
+        let old_idx = self.device_index;
+        let mut idx = self.device_index as f32;
+        ui.slider(hash!("aud_dev_idx"), "Device Index", 0.0..10.0, &mut idx);
+        self.device_index = idx as i32;
+        if self.device_index != old_idx {
+            let _ = self.save_device_index();
+            self.broadcast_device_index(ctx);
+        }
+
         if ui.button(None, "Refresh Device List") {
             self.list_devices();
         }
@@ -251,7 +287,7 @@ impl RayExtension for AudioApplet {
         Ok(())
     }
 
-    fn render(&mut self, _ctx: &mut RayContext) -> anyhow::Result<()> {
+    fn render(&mut self, ctx: &mut RayContext) -> anyhow::Result<()> {
         use macroquad::ui::{root_ui, hash};
 
         macroquad::ui::widgets::Window::new(
@@ -261,9 +297,14 @@ impl RayExtension for AudioApplet {
         )
         .label("Audio Configuration")
         .ui(&mut root_ui(), |ui| {
+            let old_idx = self.device_index;
             let mut idx = self.device_index as f32;
             ui.slider(hash!("dev_idx"), "Device", 0.0..10.0, &mut idx);
             self.device_index = idx as i32;
+            if self.device_index != old_idx {
+                let _ = self.save_device_index();
+                self.broadcast_device_index(ctx);
+            }
 
             if ui.button(None, "List Devices") {
                 self.list_devices();
