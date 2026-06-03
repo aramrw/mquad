@@ -96,6 +96,7 @@ pub struct RayEngine {
     db_path: String,
     pub hotkey_registry: HotkeyRegistry,
     pub vsync_enabled: bool,
+    clipboard: Option<arboard::Clipboard>,
 }
 
 impl RayEngine {
@@ -116,6 +117,7 @@ impl RayEngine {
             db_path: db_path.to_string(),
             hotkey_registry: HotkeyRegistry::default(),
             vsync_enabled: true,
+            clipboard: arboard::Clipboard::new().ok(),
         };
         engine.ensure_db_schema().ok();
         engine
