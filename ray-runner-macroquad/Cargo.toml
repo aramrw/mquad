@@ -9,6 +9,7 @@ ray-core = { path = "../ray-core" }
 ray-applet-yomichan = { path = "../ray-applets/yomichan" }
 ray-applet-shaders = { path = "../ray-applets/shaders" }
 ray-applet-audio = { path = "../ray-applets/audio" }
+ray-applet-capture = { path = "../ray-applets/capture" }
 macroquad = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }

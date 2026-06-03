@@ -323,9 +323,17 @@ impl RayEngine {
         // Drain the bus and dispatch to on_event
         while let Some(event) = self.bus.poll() {
             // Internal framework handling of commands
-            if let RayEvent::Command(ray_api::RayCommand::RegisterHotkey(applet_name, definition)) = &event {
-                if let Err(e) = self.register_hotkey(applet_name.clone(), definition.clone()) {
-                    tracing::error!("Failed to register hotkey: {}", e);
+            if let RayEvent::Command(cmd) = &event {
+                match cmd {
+                    ray_api::RayCommand::RegisterHotkey(applet_name, definition) => {
+                        if let Err(e) = self.register_hotkey(applet_name.clone(), definition.clone()) {
+                            tracing::error!("Failed to register hotkey: {}", e);
+                        }
+                    }
+                    ray_api::RayCommand::ToggleOverlay(active) => {
+                        self.toggle_overlay(*active);
+                    }
+                    _ => {}
                 }
             }
 

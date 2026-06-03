@@ -26,6 +26,7 @@ async fn main() {
     engine.register(ray_applet_yomichan::YomichanApplet::new());
     engine.register(ray_applet_shaders::ShaderApplet::new());
     engine.register(ray_applet_audio::AudioApplet::new());
+    engine.register(ray_applet_capture::CaptureApplet::new());
 
     // Load persisted enabled/disabled states after registration
     let _ = engine.load_settings();

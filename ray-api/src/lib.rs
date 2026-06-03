@@ -58,6 +58,11 @@ impl<'a> RayContext<'a> {
         self.bus.send(RayEvent::Command(RayCommand::RegisterHotkey(self.applet_name.clone(), definition)));
     }
 
+    /// Sends a command to the framework.
+    pub fn send_command(&self, command: RayCommand) {
+        self.bus.send(RayEvent::Command(command));
+    }
+
     /// Reads text from the system clipboard.
     pub fn clipboard_read(&mut self) -> Option<String> {
         self.clipboard.as_mut().and_then(|cb| cb.get_text().ok())
@@ -148,6 +153,8 @@ pub enum RayCommand {
     /// Registers a new hotkey with the framework.
     /// (applet_name, definition)
     RegisterHotkey(String, HotkeyDefinition),
+    /// Toggles the framework overlay mode.
+    ToggleOverlay(bool),
 }
 
 /// Audio system control commands.

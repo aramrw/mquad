@@ -1,0 +1,13 @@
+[package]
+name = "ray-applet-capture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ray-api = { path = "../../ray-api" }
+macroquad = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = "0.1"
+xcap = { workspace = true }
+image = "0.25"
