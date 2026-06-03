@@ -338,7 +338,7 @@ fn render_extensions_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui, act
 }
 
 fn render_hotkeys_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
-    ui.label(None, "Hotkey Registry:");
+    ui.label(None, \"Hotkey Registry:\");
     ui.separator();
 
     // Group by applet
@@ -350,29 +350,37 @@ fn render_hotkeys_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
     // Conflicts are now cached in the engine
     let conflicts = &engine.hotkey_registry.conflicts;
 
-    for (applet, hotkeys) in grouped {
-        ui.label(None, &format!("Applet: {}", applet));
+    for (applet, mut hotkeys) in grouped {
+        ui.label(None, &format!(\"--- {} ---\", applet));
+        
+        // Sort by scope: Global -> OS -> Local
+        hotkeys.sort_by_key(|(_, def)| match def.scope {
+            ray_api::HotkeyScope::Global => 0,
+            ray_api::HotkeyScope::OS => 1,
+            ray_api::HotkeyScope::Local => 2,
+        });
+
         for (id, def) in hotkeys {
             let is_conflict = conflicts.iter().any(|(p1, p2)| {
                 (p1.0 == applet && p1.1 == *id) || (p2.0 == applet && p2.1 == *id)
             });
             
             let mut mods_parts = Vec::new();
-            if def.modifiers.contains(ray_api::HotkeyModifiers::CTRL) { mods_parts.push("Ctrl"); }
-            if def.modifiers.contains(ray_api::HotkeyModifiers::SHIFT) { mods_parts.push("Shift"); }
-            if def.modifiers.contains(ray_api::HotkeyModifiers::ALT) { mods_parts.push("Alt"); }
-            if def.modifiers.contains(ray_api::HotkeyModifiers::LOGO) { mods_parts.push("Logo"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::CTRL) { mods_parts.push(\"Ctrl\"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::SHIFT) { mods_parts.push(\"Shift\"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::ALT) { mods_parts.push(\"Alt\"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::LOGO) { mods_parts.push(\"Logo\"); }
             
             let key_combo = if mods_parts.is_empty() {
                 def.key.clone()
             } else {
-                format!("{}+{}", mods_parts.join("+"), def.key)
+                format!(\"{}+{}\", mods_parts.join(\"+\"), def.key)
             };
 
-            let label = format!("{}: {} ({}) [{:?}]", id, def.description, key_combo, def.scope);
+            let label = format!(\"{}: {} ({}) [{:?}]\", id, def.description, key_combo, def.scope);
             
             if is_conflict {
-                ui.label(None, &format!("!!! CONFLICT !!! {}", label));
+                ui.label(None, &format!(\"!!! CONFLICT !!! {}\", label));
             } else {
                 ui.label(None, &label);
             }
