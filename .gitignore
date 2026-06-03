@@ -1,5 +1,5 @@
 /target
-docs/
-yomichan_rs/
+yomichan_rs/*
 *.db
 .*db.*
+.worktrees/

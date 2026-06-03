@@ -1,0 +1,14 @@
+[package]
+name = "ray-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+macroquad = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+anyhow = { workspace = true }
+crossbeam-channel = { workspace = true }
+clap = { workspace = true }
+tracing = "0.1"
+arboard = { workspace = true }
+bitflags = { version = "2.4", features = ["serde"] }

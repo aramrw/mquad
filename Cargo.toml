@@ -1,14 +1,25 @@
-[package]
-name = "ray"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "ray-api",
+    "ray-core",
+    "ray-runner-macroquad",
+    "ray-runner-cli",
+    "ray-applets/*",
+]
+resolver = "2"
 
-[dependencies]
-indexmap = "2.14.0"
-macroquad = "0.4.14"
+[workspace.dependencies]
+macroquad = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+crossbeam-channel = "0.5"
+clap = { version = "4.0", features = ["derive"] }
+microfft = "0.5"
+rusqlite = { version = "0.33", features = ["bundled"] }
+arboard = "3.4"
+indexmap = "2.2"
 yomichan_rs = { path = "../yomichan/yomichan_rs_workspace/yomichan_rs", features = ["anki", "rayon"] }
-rfd = "0.14.1"
-tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
-tracing-core = "0.1.36"
-microfft = "0.5.1"
+rfd = "0.14"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-core = "0.1"

@@ -1,0 +1,11 @@
+[package]
+name = "ray-applet-audio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ray-api = { path = "../../ray-api" }
+macroquad = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+microfft = { workspace = true }
