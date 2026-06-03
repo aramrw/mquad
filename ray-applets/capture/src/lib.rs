@@ -2,23 +2,79 @@ use ray_api::{RayExtension, RayContext, RayEvent, HotkeyDefinition, HotkeyScope,
 use macroquad::prelude::*;
 use anyhow::Result;
 
+#[derive(PartialEq)]
+enum CaptureMode {
+    Screenshot,
+    Video,
+}
+
 pub struct CaptureApplet {
     active: bool,
+    mode: CaptureMode,
     snapshot_tex: Option<Texture2D>,
     snapshot_raw: Option<image::RgbaImage>,
     selection_start: Option<Vec2>,
     selection_end: Option<Vec2>,
+    recording_process: Option<std::process::Child>,
+    recording_filename: Option<String>,
 }
 
 impl CaptureApplet {
     pub fn new() -> Self {
         Self {
             active: false,
+            mode: CaptureMode::Screenshot,
             snapshot_tex: None,
             snapshot_raw: None,
             selection_start: None,
             selection_end: None,
+            recording_process: None,
+            recording_filename: None,
         }
+    }
+
+    fn start_recording(&mut self) -> Result<()> {
+        if let (Some(start), Some(end)) = (self.selection_start, self.selection_end) {
+            let x = start.x.min(end.x) as u32;
+            let y = start.y.min(end.y) as u32;
+            let w = (start.x - end.x).abs() as u32;
+            let h = (start.y - end.y).abs() as u32;
+
+            if w > 10 && h > 10 {
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+                let filename = format!("recording_{}.mp4", timestamp);
+                
+                #[cfg(target_os = "macos")]
+                let (input_format, input_device) = ("avfoundation", "1:none");
+                #[cfg(target_os = "windows")]
+                let (input_format, input_device) = ("gdigrab", "desktop");
+                #[cfg(not(any(target_os = "macos", windows)))]
+                let (input_format, input_device) = ("x11grab", ":0.0");
+
+                // Base command
+                let mut cmd = std::process::Command::new("ffmpeg");
+                cmd.args(&["-f", input_format, "-i", input_device]);
+
+                // Crop and Encode
+                // Note: Coordinates might need scaling for Retina/HighDPI
+                let crop_filter = format!("crop={}:{}:{}:{}", w, h, x, y);
+                cmd.args(&["-vf", &crop_filter, "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p", &filename]);
+
+                let child = cmd.spawn()?;
+                self.recording_process = Some(child);
+                self.recording_filename = Some(filename);
+                tracing::info!("Started recording to {}", self.recording_filename.as_ref().unwrap());
+            }
+        }
+        Ok(())
+    }
+
+    fn stop_recording(&mut self) -> Result<()> {
+        if let Some(mut child) = self.recording_process.take() {
+            child.kill()?;
+            tracing::info!("Stopped recording. Saved to {:?}", self.recording_filename.take());
+        }
+        Ok(())
     }
 
     fn capture_screenshot(&mut self) -> Result<()> {
@@ -89,17 +145,42 @@ impl RayExtension for CaptureApplet {
             description: "Capture Region Screenshot".to_string(),
             internal_keycode: None,
         });
+        ctx.register_hotkey(HotkeyDefinition {
+            id: "region_video".to_string(),
+            key: "R".to_string(),
+            modifiers: HotkeyModifiers::CTRL | HotkeyModifiers::SHIFT,
+            scope: HotkeyScope::Global,
+            description: "Capture Region Video".to_string(),
+            internal_keycode: None,
+        });
         Ok(())
     }
 
     fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> Result<()> {
         match event {
             RayEvent::HotkeyTriggered(id) if id == "region_screenshot" => {
-                self.active = true;
-                ctx.send_command(RayCommand::ToggleOverlay(true));
-                self.capture_screenshot()?;
-                self.selection_start = None;
-                self.selection_end = None;
+                if self.recording_process.is_some() {
+                    self.stop_recording()?;
+                } else {
+                    self.active = true;
+                    self.mode = CaptureMode::Screenshot;
+                    ctx.send_command(RayCommand::ToggleOverlay(true));
+                    self.capture_screenshot()?;
+                    self.selection_start = None;
+                    self.selection_end = None;
+                }
+            }
+            RayEvent::HotkeyTriggered(id) if id == "region_video" => {
+                if self.recording_process.is_some() {
+                    self.stop_recording()?;
+                } else {
+                    self.active = true;
+                    self.mode = CaptureMode::Video;
+                    ctx.send_command(RayCommand::ToggleOverlay(true));
+                    self.capture_screenshot()?;
+                    self.selection_start = None;
+                    self.selection_end = None;
+                }
             }
             _ => {}
         }
@@ -124,7 +205,11 @@ impl RayExtension for CaptureApplet {
             let (mx, my) = mouse_position();
             self.selection_end = Some(vec2(mx, my));
         } else if is_mouse_button_released(MouseButton::Left) {
-            self.finalize_selection(ctx)?;
+            if self.mode == CaptureMode::Screenshot {
+                self.finalize_selection(ctx)?;
+            } else {
+                self.start_recording()?;
+            }
             self.active = false;
             ctx.send_command(RayCommand::ToggleOverlay(false));
             self.snapshot_tex = None;
