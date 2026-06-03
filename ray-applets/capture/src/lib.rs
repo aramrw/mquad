@@ -1,4 +1,4 @@
-use ray_api::{RayExtension, RayContext, RayEvent, HotkeyDefinition, HotkeyScope, HotkeyModifiers, RayCommand};
+use ray_api::{RayExtension, RayContext, RayEvent, HotkeyDefinition, HotkeyScope, HotkeyModifiers, RayCommand, AudioEvent};
 use macroquad::prelude::*;
 use anyhow::Result;
 
@@ -20,6 +20,8 @@ pub struct CaptureApplet {
     crf: i32,
     fps: i32,
     save_dir: String,
+    audio_enabled: bool,
+    audio_device_index: i32,
 }
 
 impl CaptureApplet {
@@ -36,6 +38,38 @@ impl CaptureApplet {
             crf: 23,
             fps: 30,
             save_dir: ".".to_string(),
+            audio_enabled: false,
+            audio_device_index: 1,
+        }
+    }
+
+    fn save_settings(&self) -> Result<()> {
+        let conn = rusqlite::Connection::open("framework_settings.db")?;
+        conn.execute(
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["capture", "audio_enabled", self.audio_enabled.to_string()],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["capture", "audio_device_index", self.audio_device_index.to_string()],
+        )?;
+        Ok(())
+    }
+
+    fn load_settings(&mut self) {
+        if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
+            let mut stmt = conn.prepare("SELECT key, value FROM applet_configs WHERE applet = ?1").ok().unwrap();
+            let rows = stmt.query_map(rusqlite::params!["capture"], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }).ok().unwrap();
+
+            for row in rows.flatten() {
+                match row.0.as_str() {
+                    "audio_enabled" => self.audio_enabled = row.1.parse().unwrap_or(false),
+                    "audio_device_index" => self.audio_device_index = row.1.parse().unwrap_or(1),
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -52,17 +86,23 @@ impl CaptureApplet {
                 let filename = path.to_str().unwrap().to_string();
                 
                 #[cfg(target_os = "macos")]
-                let (input_format, input_device) = ("avfoundation", "1:none");
+                let (input_format, input_device) = ("avfoundation", if self.audio_enabled { format!("1:{}", self.audio_device_index) } else { "1:none".to_string() });
                 #[cfg(target_os = "windows")]
-                let (input_format, input_device) = ("gdigrab", "desktop");
+                let (input_format, input_device) = ("gdigrab", "desktop".to_string());
                 #[cfg(not(any(target_os = "macos", windows)))]
-                let (input_format, input_device) = ("x11grab", ":0.0");
+                let (input_format, input_device) = ("x11grab", ":0.0".to_string());
 
                 let mut cmd = std::process::Command::new("ffmpeg");
-                cmd.args(&["-f", input_format, "-framerate", &self.fps.to_string(), "-i", input_device]);
+                cmd.args(&["-f", input_format, "-framerate", &self.fps.to_string(), "-i", &input_device]);
 
                 let crop_filter = format!("crop={}:{}:{}:{}", w, h, x, y);
-                cmd.args(&["-vf", &crop_filter, "-c:v", "libx264", "-crf", &self.crf.to_string(), "-pix_fmt", "yuv420p", &filename]);
+                cmd.args(&["-vf", &crop_filter, "-c:v", "libx264", "-crf", &self.crf.to_string(), "-pix_fmt", "yuv420p"]);
+                
+                if self.audio_enabled {
+                    cmd.args(&["-c:a", "aac"]);
+                }
+
+                cmd.arg(&filename);
 
                 let child = cmd.spawn()?;
                 self.recording_process = Some(child);
@@ -142,6 +182,7 @@ impl RayExtension for CaptureApplet {
     fn name(&self) -> &str { "Capture" }
 
     fn init(&mut self, ctx: &mut RayContext, _args: &clap::ArgMatches) -> Result<()> {
+        self.load_settings();
         ctx.register_hotkey(HotkeyDefinition {
             id: "region_screenshot".to_string(),
             key: "X".to_string(),
@@ -186,6 +227,10 @@ impl RayExtension for CaptureApplet {
                     self.selection_start = None;
                     self.selection_end = None;
                 }
+            }
+            RayEvent::Audio(AudioEvent::DeviceSelected(idx)) => {
+                self.audio_device_index = *idx;
+                let _ = self.save_settings();
             }
             _ => {}
         }
@@ -295,6 +340,13 @@ impl RayExtension for CaptureApplet {
         
         ui.separator();
         ui.label(None, "Video Recording:");
+        
+        let old_audio = self.audio_enabled;
+        ui.checkbox(hash!("audio_enabled"), "Include Audio", &mut self.audio_enabled);
+        if self.audio_enabled != old_audio {
+            let _ = self.save_settings();
+        }
+        ui.label(None, &format!("Audio Device Index: {}", self.audio_device_index));
         
         let mut crf = self.crf as f32;
         ui.slider(hash!("crf_slider"), "Quality (CRF, lower is better)", 0.0..51.0, &mut crf);
