@@ -86,25 +86,43 @@ impl CaptureApplet {
                 let filename = path.to_str().unwrap().to_string();
                 
                 #[cfg(target_os = "macos")]
-                let (input_format, input_device) = ("avfoundation", if self.audio_enabled { format!("1:{}", self.audio_device_index) } else { "1:none".to_string() });
+                let (input_format, input_device) = ("avfoundation", "1:none");
                 #[cfg(target_os = "windows")]
-                let (input_format, input_device) = ("gdigrab", "desktop".to_string());
+                let (input_format, input_device) = ("gdigrab", "desktop");
                 #[cfg(not(any(target_os = "macos", windows)))]
-                let (input_format, input_device) = ("x11grab", ":0.0".to_string());
+                let (input_format, input_device) = ("x11grab", ":0.0");
 
                 let mut cmd = std::process::Command::new("ffmpeg");
-                cmd.args(&["-f", input_format, "-framerate", &self.fps.to_string(), "-i", &input_device]);
+                
+                // Input 0: Video
+                cmd.args(&["-f", input_format, "-framerate", &self.fps.to_string(), "-i", input_device]);
+                
+                if self.audio_enabled {
+                    // Input 1: Audio from Stdin
+                    cmd.args(&["-f", "f32le", "-ar", "44100", "-ac", "1", "-i", "-"]);
+                    cmd.stdin(std::process::Stdio::piped());
+                    
+                    // Trigger Audio extension
+                    ctx.bus.send(RayEvent::Command(RayCommand::Audio(ray_api::AudioCommand::StartRecording)));
+                }
 
                 let crop_filter = format!("crop={}:{}:{}:{}", w, h, x, y);
                 cmd.args(&["-vf", &crop_filter, "-c:v", "libx264", "-crf", &self.crf.to_string(), "-pix_fmt", "yuv420p"]);
                 
                 if self.audio_enabled {
-                    cmd.args(&["-c:a", "aac"]);
+                    cmd.args(&["-c:a", "aac", "-shortest"]);
+                    // Map inputs: 0:v for video, 1:a for audio
+                    cmd.args(&["-map", "0:v", "-map", "1:a"]);
                 }
 
                 cmd.arg(&filename);
 
-                let child = cmd.spawn()?;
+                let mut child = cmd.spawn()?;
+                if self.audio_enabled {
+                    if let Some(stdin) = child.stdin.take() {
+                        self.audio_stdin = Some(std::io::BufWriter::new(stdin));
+                    }
+                }
                 self.recording_process = Some(child);
                 self.recording_filename = Some(filename);
                 ctx.send_command(RayCommand::MiniMode(true));
@@ -115,6 +133,7 @@ impl CaptureApplet {
     }
 
     fn stop_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
+        self.audio_stdin = None; // Dropping BufWriter closes the pipe
         if let Some(mut child) = self.recording_process.take() {
             let _ = child.kill();
             ctx.send_command(RayCommand::MiniMode(false));
