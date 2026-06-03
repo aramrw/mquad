@@ -1,6 +1,6 @@
-use macroquad::ui::{hash, Ui};
+use macroquad::ui::{hash, widgets::ComboBox, Ui};
 use crate::YomichanApp;
-use yomichan_rs::settings::core::AnkiTermFieldType;
+use yomichan_rs::settings::core::{AnkiTermFieldType, FieldIndex};
 
 impl YomichanApp {
     pub fn draw_anki_tab(&mut self, ui: &mut Ui) {
@@ -20,11 +20,47 @@ impl YomichanApp {
         if models.is_empty() || decks.is_empty() {
             ui.label(None, "No decks or models found. Ensure Anki is open and AnkiConnect is installed, then Sync.");
         } else {
-            // Simplified for immediate functionality: we can auto-configure or allow manual setup.
-            // For now, we'll provide a button to auto-configure using the first available model,
-            // as full dropdown macroquad implementation with dynamic state requires complex UI state management.
-            if ui.button(None, "Auto-Configure First Model & Deck") {
-                let _ = anki.configure_note_creation_auto();
+            let deck_refs: Vec<&str> = decks.iter().map(|s| s.as_str()).collect();
+            let model_refs: Vec<&str> = models.iter().map(|s| s.as_str()).collect();
+
+            ui.label(None, "Target Deck:");
+            ComboBox::new(hash!("deck_combo"), &deck_refs).ui(ui, &mut self.anki_deck_idx);
+
+            ui.label(None, "Target Note Model:");
+            ComboBox::new(hash!("model_combo"), &model_refs).ui(ui, &mut self.anki_model_idx);
+
+            ui.separator();
+            ui.label(None, "Field Mappings:");
+
+            let fields = anki.field_names(self.anki_model_idx);
+            
+            if !fields.is_empty() {
+                let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
+
+                ui.label(None, "Term Field:");
+                ComboBox::new(hash!("field_term_combo"), &field_refs).ui(ui, &mut self.anki_field_term_idx);
+
+                ui.label(None, "Reading Field:");
+                ComboBox::new(hash!("field_reading_combo"), &field_refs).ui(ui, &mut self.anki_field_reading_idx);
+
+                ui.label(None, "Definition Field:");
+                ComboBox::new(hash!("field_def_combo"), &field_refs).ui(ui, &mut self.anki_field_def_idx);
+
+                ui.label(None, "Sentence Field:");
+                ComboBox::new(hash!("field_sentence_combo"), &field_refs).ui(ui, &mut self.anki_field_sentence_idx);
+            }
+
+            ui.separator();
+
+            if ui.button(None, "Apply Configuration") {
+                let _ = anki.select_deck(self.anki_deck_idx);
+                let _ = anki.select_model(self.anki_model_idx);
+                let _ = anki.set_field_mappings(&[
+                    FieldIndex::Term(self.anki_field_term_idx),
+                    FieldIndex::Reading(self.anki_field_reading_idx),
+                    FieldIndex::Definition(self.anki_field_def_idx),
+                    FieldIndex::Sentence(self.anki_field_sentence_idx),
+                ]);
             }
         }
         

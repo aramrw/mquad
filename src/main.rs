@@ -41,6 +41,12 @@ pub struct YomichanApp {
     pub discovered_fonts: Vec<(String, String)>, // (Name, Path)
     pub selected_font_path: String,
     pub pending_font_update: Option<String>,
+    pub anki_deck_idx: usize,
+    pub anki_model_idx: usize,
+    pub anki_field_term_idx: usize,
+    pub anki_field_reading_idx: usize,
+    pub anki_field_def_idx: usize,
+    pub anki_field_sentence_idx: usize,
 }
 
 const DEFAULT_FONT_SIZE: u8 = 24;
@@ -263,6 +269,12 @@ async fn main() {
         discovered_fonts: Vec::new(),
         selected_font_path: String::new(),
         pending_font_update: None,
+        anki_deck_idx: 0,
+        anki_model_idx: 0,
+        anki_field_term_idx: 0,
+        anki_field_reading_idx: 0,
+        anki_field_def_idx: 0,
+        anki_field_sentence_idx: 0,
     };
 
     app.scan_system_fonts();
