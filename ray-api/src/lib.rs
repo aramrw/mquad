@@ -243,6 +243,8 @@ pub enum AudioEvent {
     Buffer(Vec<f32>),
     /// Frequency spectrum data.
     Spectrum(Vec<f32>),
+    /// Broadcasts the currently selected device index.
+    DeviceSelected(i32),
 }
 
 /// A thread-safe event bus for communication within the Ray framework.
