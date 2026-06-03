@@ -48,12 +48,28 @@ pub struct RayContext<'a> {
     pub applet_name: String,
     /// True if the applet is currently being rendered/focused.
     pub is_active: bool,
+    /// Mutable reference to the system clipboard.
+    pub clipboard: Option<&'a mut arboard::Clipboard>,
 }
 
 impl<'a> RayContext<'a> {
     /// Registers a new hotkey with the framework.
     pub fn register_hotkey(&self, definition: HotkeyDefinition) {
         self.bus.send(RayEvent::Command(RayCommand::RegisterHotkey(self.applet_name.clone(), definition)));
+    }
+
+    /// Reads text from the system clipboard.
+    pub fn clipboard_read(&mut self) -> Option<String> {
+        self.clipboard.as_mut().and_then(|cb| cb.get_text().ok())
+    }
+
+    /// Writes text to the system clipboard.
+    pub fn clipboard_write(&mut self, text: String) {
+        if let Some(cb) = self.clipboard.as_mut() {
+            if let Err(e) = cb.set_text(text) {
+                tracing::error!("Clipboard write error: {}", e);
+            }
+        }
     }
 }
 
