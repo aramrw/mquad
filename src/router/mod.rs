@@ -2,6 +2,8 @@ pub mod import;
 pub mod search;
 pub mod threed;
 pub mod audio;
+pub mod settings;
+pub mod anki;
 
 use macroquad::{
     ui::root_ui,
@@ -18,6 +20,8 @@ pub enum Route {
     ThreeD,
     Audio,
     ShaderError,
+    Settings,
+    Anki,
 }
 
 #[derive(Default)]
@@ -74,6 +78,14 @@ impl YomichanApp {
         if ui.button(None, "Audio") {
             self.router.set(Route::Audio);
         }
+        ui.same_line(0.0);
+        if ui.button(None, "Settings") {
+            self.router.set(Route::Settings);
+        }
+        ui.same_line(0.0);
+        if ui.button(None, "Anki") {
+            self.router.set(Route::Anki);
+        }
 
         ui.separator();
 
@@ -89,6 +101,7 @@ impl YomichanApp {
                 let iso = if self.language_index == 0 { "ja" } else { "es" };
                 if let Ok(_) = self.yomichan.set_language(iso) {
                     let _ = self.yomichan.save_settings();
+                    let _ = self.save_language_to_db(); // Save to our persistent settings table
                     self.search_results = None;
                     self.cached_entries.clear();
                 }
@@ -134,6 +147,28 @@ impl YomichanApp {
                     self.draw_audio_tab(ui);
                 });
             }
+            Route::Settings => {
+                macroquad::ui::widgets::Window::new(
+                    hash!("settings_win"),
+                    macroquad::math::vec2(0.0, 100.0),
+                    macroquad::math::vec2(screen_width(), screen_height() - 100.0),
+                )
+                .label("Settings")
+                .ui(ui, |ui| {
+                    self.draw_settings_page(ui);
+                });
+            }
+            Route::Anki => {
+                macroquad::ui::widgets::Window::new(
+                    hash!("anki_win"),
+                    macroquad::math::vec2(0.0, 100.0),
+                    macroquad::math::vec2(screen_width(), screen_height() - 100.0),
+                )
+                .label("Anki Integration")
+                .ui(ui, |ui| {
+                    self.draw_anki_tab(ui);
+                });
+            }
             Route::ShaderError => {
                 macroquad::ui::widgets::Window::new(
                     hash!("error_win"),
@@ -165,12 +200,14 @@ impl YomichanApp {
                         let max_chars = (max_width / char_width) as usize;
 
                         for line in err.lines() {
-                            if line.len() > max_chars {
+                            let chars: Vec<char> = line.chars().collect();
+                            if chars.len() > max_chars {
                                 // Simple wrap for long lines
                                 let mut start = 0;
-                                while start < line.len() {
-                                    let end = (start + max_chars).min(line.len());
-                                    ui.label(None, &line[start..end]);
+                                while start < chars.len() {
+                                    let end = (start + max_chars).min(chars.len());
+                                    let chunk: String = chars[start..end].iter().collect();
+                                    ui.label(None, &chunk);
                                     start = end;
                                 }
                             } else {

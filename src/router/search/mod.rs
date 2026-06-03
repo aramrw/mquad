@@ -3,8 +3,26 @@ use macroquad::ui::{Ui, hash, widgets::InputText};
 use crate::YomichanApp;
 
 impl YomichanApp {
+    fn get_clipboard(&self) -> Option<String> {
+        use std::process::Command;
+        let output = Command::new("pbpaste").output().ok()?;
+        if output.status.success() {
+            String::from_utf8(output.stdout).ok()
+        } else {
+            None
+        }
+    }
+
     pub fn draw_search_content(&mut self, ui: &mut Ui) {
-        use macroquad::input::{KeyCode, is_key_pressed};
+        use macroquad::input::{is_key_down, is_key_pressed, KeyCode};
+
+        // Handle Paste (Cmd + V)
+        let super_down = is_key_down(KeyCode::LeftSuper) || is_key_down(KeyCode::RightSuper);
+        if super_down && is_key_pressed(KeyCode::V) {
+            if let Some(content) = self.get_clipboard() {
+                self.search_query.push_str(&content);
+            }
+        }
 
         InputText::new(hash!("search_input")).ui(ui, &mut self.search_query);
 
@@ -67,10 +85,25 @@ impl YomichanApp {
         }
 
         // Render cached segment definitions
+        let max_width = macroquad::window::screen_width() - 40.0;
+        let char_width = 15.0; // Estimate for CJK/Pixel mixed text
+        let max_chars = (max_width / char_width) as usize;
+
         for entry in &self.cached_entries {
             ui.label(None, &entry.headword);
             for def in &entry.definitions {
-                ui.label(None, def);
+                let chars: Vec<char> = def.chars().collect();
+                if chars.len() > max_chars {
+                    let mut start = 0;
+                    while start < chars.len() {
+                        let end = (start + max_chars).min(chars.len());
+                        let chunk: String = chars[start..end].iter().collect();
+                        ui.label(None, &chunk);
+                        start = end;
+                    }
+                } else {
+                    ui.label(None, def);
+                }
             }
             ui.separator();
         }

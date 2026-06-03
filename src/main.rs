@@ -35,29 +35,54 @@ pub struct YomichanApp {
     pub audio_state: AudioState,
     pub skin: macroquad::ui::Skin,
     pub show_ui: bool,
+    pub font: Option<Font>,
+    pub discovered_fonts: Vec<(String, String)>, // (Name, Path)
+    pub selected_font_path: String,
+    pub pending_font_update: Option<String>,
 }
 
 const DEFAULT_FONT_SIZE: u8 = 24;
 
 impl YomichanApp {
-    pub fn create_skin() -> macroquad::ui::Skin {
+    pub fn create_skin(font_bytes: Option<&[u8]>) -> macroquad::ui::Skin {
         use macroquad::ui::root_ui;
 
-        let label_style = root_ui()
-            .style_builder()
+        let mut label_builder = root_ui().style_builder();
+        if let Some(bytes) = font_bytes {
+            if let Ok(b) = label_builder.font(bytes) {
+                label_builder = b;
+            } else {
+                label_builder = root_ui().style_builder();
+            }
+        }
+        let label_style = label_builder
             .text_color(Color::from_rgba(220, 220, 220, 255))
             .font_size(DEFAULT_FONT_SIZE as u16)
             .build();
 
-        let window_style = root_ui()
-            .style_builder()
+        let mut window_builder = root_ui().style_builder();
+        if let Some(bytes) = font_bytes {
+            if let Ok(b) = window_builder.font(bytes) {
+                window_builder = b;
+            } else {
+                window_builder = root_ui().style_builder();
+            }
+        }
+        let window_style = window_builder
             .color(Color::from_rgba(30, 30, 30, 255))
             .text_color(Color::from_rgba(255, 255, 255, 255))
             .font_size(20)
             .build();
 
-        let button_style = root_ui()
-            .style_builder()
+        let mut button_builder = root_ui().style_builder();
+        if let Some(bytes) = font_bytes {
+            if let Ok(b) = button_builder.font(bytes) {
+                button_builder = b;
+            } else {
+                button_builder = root_ui().style_builder();
+            }
+        }
+        let button_style = button_builder
             .color(Color::from_rgba(50, 50, 50, 255))
             .color_hovered(Color::from_rgba(70, 70, 70, 255))
             .color_clicked(Color::from_rgba(90, 90, 90, 255))
@@ -65,8 +90,15 @@ impl YomichanApp {
             .font_size(DEFAULT_FONT_SIZE as u16)
             .build();
 
-        let editbox_style = root_ui()
-            .style_builder()
+        let mut editbox_builder = root_ui().style_builder();
+        if let Some(bytes) = font_bytes {
+            if let Ok(b) = editbox_builder.font(bytes) {
+                editbox_builder = b;
+            } else {
+                editbox_builder = root_ui().style_builder();
+            }
+        }
+        let editbox_style = editbox_builder
             .color(Color::from_rgba(40, 40, 40, 255))
             .text_color(Color::from_rgba(240, 240, 240, 255))
             .font_size(DEFAULT_FONT_SIZE as u16)
@@ -110,6 +142,83 @@ impl YomichanApp {
             });
         }
     }
+
+    pub fn save_settings_to_db(&self) -> Result<(), rusqlite::Error> {
+        let conn = rusqlite::Connection::open("yomichan_rs/db.ycd")?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ray_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )",
+            [],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)",
+            ["selected_font_path", &self.selected_font_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_language_to_db(&self) -> Result<(), rusqlite::Error> {
+        let conn = rusqlite::Connection::open("yomichan_rs/db.ycd")?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ray_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )",
+            [],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)",
+            ["language_index", &self.language_index.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_settings_from_db(&mut self) -> Result<(), rusqlite::Error> {
+        let conn = rusqlite::Connection::open("yomichan_rs/db.ycd")?;
+        // Check if table exists
+        let table_exists: bool = conn.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='ray_settings'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        if table_exists {
+            let mut stmt = conn.prepare("SELECT value FROM ray_settings WHERE key = ?1")?;
+            
+            // Load Font
+            {
+                let mut rows = stmt.query(["selected_font_path"])?;
+                if let Some(row) = rows.next()? {
+                    let path: String = row.get(0)?;
+                    if !path.is_empty() {
+                        self.update_font(path);
+                    }
+                }
+            }
+
+            // Load Language Index
+            {
+                let mut rows = stmt.query(["language_index"])?;
+                if let Some(row) = rows.next()? {
+                    let idx_str: String = row.get(0)?;
+                    if let Ok(idx) = idx_str.parse::<usize>() {
+                        self.language_index = idx;
+                        let iso = if self.language_index == 0 { "ja" } else { "es" };
+                        let _ = self.yomichan.set_language(iso);
+                    }
+                } else {
+                    // Fallback to ja if no settings exist yet
+                    let _ = self.yomichan.set_language("ja");
+                }
+            }
+        } else {
+            // Table doesn't exist, default to ja
+            let _ = self.yomichan.set_language("ja");
+        }
+        Ok(())
+    }
 }
 
 fn window_conf() -> Conf {
@@ -142,15 +251,26 @@ async fn main() {
         language_index: 0,
         threed_state: ThreeDState::default(),
         audio_state: AudioState::default(),
-        skin: YomichanApp::create_skin(),
+        skin: YomichanApp::create_skin(None),
         show_ui: true,
+        font: None,
+        discovered_fonts: Vec::new(),
+        selected_font_path: String::new(),
+        pending_font_update: None,
     };
+
+    app.scan_system_fonts();
+    let _ = app.load_settings_from_db();
 
     app.refresh_shader_list();
     app.compile_shader();
 
     loop {
         clear_background(BLACK);
+
+        if let Some(path) = app.pending_font_update.take() {
+            app.update_font(path);
+        }
 
         if is_key_down(KeyCode::LeftShift) && is_key_pressed(KeyCode::H) {
             app.show_ui = !app.show_ui;
