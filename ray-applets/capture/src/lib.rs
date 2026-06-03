@@ -21,7 +21,7 @@ pub struct CaptureApplet {
     fps: i32,
     save_dir: String,
     audio_enabled: bool,
-    audio_device_index: i32,
+    audio_stdin: Option<std::io::BufWriter<std::process::ChildStdin>>,
 }
 
 impl CaptureApplet {
@@ -39,7 +39,7 @@ impl CaptureApplet {
             fps: 30,
             save_dir: ".".to_string(),
             audio_enabled: false,
-            audio_device_index: 1,
+            audio_stdin: None,
         }
     }
 
@@ -210,6 +210,7 @@ impl RayExtension for CaptureApplet {
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Screenshot;
+                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
@@ -222,6 +223,7 @@ impl RayExtension for CaptureApplet {
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Video;
+                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
