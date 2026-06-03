@@ -6,6 +6,8 @@ use std::str::FromStr;
 
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{CFRunLoopRunInMode, kCFRunLoopDefaultMode};
+#[cfg(target_os = "macos")]
+use objc::{msg_send, sel, sel_impl};
 
 fn window_conf() -> Conf {
     Conf {
@@ -42,6 +44,7 @@ async fn main() {
     let mut settings_tab = 0; // 0 for Extensions, 1 for Hotkeys
     let mut show_console = false;
     let mut console_logs: Vec<ray_api::LogEvent> = Vec::new();
+    let mut last_overlay_active = false;
 
     loop {
         let frame_start = std::time::Instant::now();
@@ -50,6 +53,12 @@ async fn main() {
         #[cfg(target_os = "macos")]
         unsafe {
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.00001, 0);
+        }
+
+        // Handle Overlay State Changes
+        if engine.overlay_active != last_overlay_active {
+            update_window_overlay(engine.overlay_active);
+            last_overlay_active = engine.overlay_active;
         }
 
         // Sync and Poll OS hotkeys
@@ -423,3 +432,56 @@ fn render_console_ui(console_logs: &mut Vec<ray_api::LogEvent>) {
         }
     });
 }
+
+#[cfg(target_os = "macos")]
+fn update_window_overlay(active: bool) {
+    use objc::{msg_send, sel, sel_impl, class};
+    unsafe {
+        let ns_app: *mut objc::runtime::Object = msg_send![class!(NSApplication), sharedApplication];
+        let mut ns_window: *mut objc::runtime::Object = msg_send![ns_app, keyWindow];
+        
+        if ns_window.is_null() {
+            let windows: *mut objc::runtime::Object = msg_send![ns_app, windows];
+            let count: usize = msg_send![windows, count];
+            if count > 0 {
+                ns_window = msg_send![windows, objectAtIndex: 0];
+            }
+        }
+
+        if ns_window.is_null() { return; }
+        
+        if active {
+            // NSWindowLevel: 21 (ScreenSaverWindowLevel)
+            let _: () = msg_send![ns_window, setLevel: 21];
+            let _: () = msg_send![ns_window, setStyleMask: 0]; // Borderless
+            let _: () = msg_send![ns_window, setHasShadow: false];
+        } else {
+            let _: () = msg_send![ns_window, setLevel: 0]; // Normal
+            let _: () = msg_send![ns_window, setStyleMask: 1 | 2 | 4 | 8]; // Titled | Closable | Miniaturizable | Resizable
+            let _: () = msg_send![ns_window, setHasShadow: true];
+        }
+    }
+}
+
+#[cfg(windows)]
+fn update_window_overlay(active: bool) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd == 0 { return; }
+        
+        if active {
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            let style = GetWindowLongW(hwnd, GWL_STYLE);
+            SetWindowLongW(hwnd, GWL_STYLE, (style as u32 & !(WS_CAPTION | WS_THICKFRAME)) as i32);
+        } else {
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            let style = GetWindowLongW(hwnd, GWL_STYLE);
+            SetWindowLongW(hwnd, GWL_STYLE, (style as u32 | WS_CAPTION | WS_THICKFRAME) as i32);
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn update_window_overlay(_active: bool) {}
+

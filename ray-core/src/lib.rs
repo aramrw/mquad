@@ -96,6 +96,7 @@ pub struct RayEngine {
     db_path: String,
     pub hotkey_registry: HotkeyRegistry,
     pub vsync_enabled: bool,
+    pub overlay_active: bool,
     clipboard: Option<arboard::Clipboard>,
 }
 
@@ -117,6 +118,7 @@ impl RayEngine {
             db_path: db_path.to_string(),
             hotkey_registry: HotkeyRegistry::default(),
             vsync_enabled: true,
+            overlay_active: false,
             clipboard: arboard::Clipboard::new().ok(),
         };
         engine.ensure_db_schema().ok();
@@ -222,6 +224,10 @@ impl RayEngine {
             rusqlite::params!["vsync_enabled", if enabled { "true" } else { "false" }],
         )?;
         Ok(())
+    }
+
+    pub fn toggle_overlay(&mut self, active: bool) {
+        self.overlay_active = active;
     }
 
     pub fn save_extension_state(&self, name: &str, enabled: bool) -> Result<()> {
