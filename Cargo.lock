@@ -63,7 +63,7 @@ dependencies = [
 [[package]]
 name = "anki_direct"
 version = "0.0.14"
-source = "git+https://github.com/aramrw/anki_direct?branch=note#a6817307b4286dea1ef651625877512cffb6472f"
+source = "git+https://github.com/aramrw/anki_direct.git?branch=note#a6817307b4286dea1ef651625877512cffb6472f"
 dependencies = [
  "base64",
  "derive-where",
@@ -2444,10 +2444,12 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 name = "ray"
 version = "0.1.0"
 dependencies = [
+ "anki_direct",
  "indexmap 2.14.0",
  "macroquad",
  "microfft",
  "rfd",
+ "rusqlite",
  "tracing",
  "tracing-core",
  "tracing-subscriber",
