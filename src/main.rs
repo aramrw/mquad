@@ -257,12 +257,28 @@ impl YomichanApp {
                     None
                 };
 
-                if let Some(idx) = load_idx("anki_deck_idx") { self.anki_deck_idx = idx; }
-                if let Some(idx) = load_idx("anki_model_idx") { self.anki_model_idx = idx; }
-                if let Some(idx) = load_idx("anki_field_term_idx") { self.anki_field_term_idx = idx; }
-                if let Some(idx) = load_idx("anki_field_reading_idx") { self.anki_field_reading_idx = idx; }
-                if let Some(idx) = load_idx("anki_field_def_idx") { self.anki_field_def_idx = idx; }
-                if let Some(idx) = load_idx("anki_field_sentence_idx") { self.anki_field_sentence_idx = idx; }
+                let mut anki_loaded = false;
+                if let Some(idx) = load_idx("anki_deck_idx") { self.anki_deck_idx = idx; anki_loaded = true; }
+                if let Some(idx) = load_idx("anki_model_idx") { self.anki_model_idx = idx; anki_loaded = true; }
+                if let Some(idx) = load_idx("anki_field_term_idx") { self.anki_field_term_idx = idx; anki_loaded = true; }
+                if let Some(idx) = load_idx("anki_field_reading_idx") { self.anki_field_reading_idx = idx; anki_loaded = true; }
+                if let Some(idx) = load_idx("anki_field_def_idx") { self.anki_field_def_idx = idx; anki_loaded = true; }
+                if let Some(idx) = load_idx("anki_field_sentence_idx") { self.anki_field_sentence_idx = idx; anki_loaded = true; }
+
+                if anki_loaded {
+                    let anki = self.yomichan.anki();
+                    // Attempt to apply the loaded configuration. 
+                    // This relies on Yomichan having the maps cached or loaded.
+                    use yomichan_rs::settings::core::FieldIndex;
+                    let _ = anki.select_deck(self.anki_deck_idx);
+                    let _ = anki.select_model(self.anki_model_idx);
+                    let _ = anki.set_field_mappings(&[
+                        FieldIndex::Term(self.anki_field_term_idx),
+                        FieldIndex::Reading(self.anki_field_reading_idx),
+                        FieldIndex::Definition(self.anki_field_def_idx),
+                        FieldIndex::Sentence(self.anki_field_sentence_idx),
+                    ]);
+                }
             }
         } else {
             // Table doesn't exist, default to ja
