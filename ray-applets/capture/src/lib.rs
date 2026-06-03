@@ -223,35 +223,44 @@ impl RayExtension for CaptureApplet {
 
     fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> Result<()> {
         match event {
-            RayEvent::HotkeyTriggered(id) if id == "region_screenshot" => {
+            RayEvent::HotkeyTriggered(id) if id == \"region_screenshot\" => {
                 if self.recording_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Screenshot;
-                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
+                    ctx.send_command(RayCommand::SelectExtension(\"Capture\".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
                     self.selection_end = None;
                 }
             }
-            RayEvent::HotkeyTriggered(id) if id == "region_video" => {
+            RayEvent::HotkeyTriggered(id) if id == \"region_video\" => {
                 if self.recording_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Video;
-                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
+                    ctx.send_command(RayCommand::SelectExtension(\"Capture\".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
                     self.selection_end = None;
                 }
             }
-            RayEvent::Audio(AudioEvent::DeviceSelected(idx)) => {
-                self.audio_device_index = *idx;
-                let _ = self.save_settings();
+            RayEvent::Audio(AudioEvent::Buffer(samples)) => {
+                if let Some(writer) = &mut self.audio_stdin {
+                    use std::io::Write;
+                    for &sample in samples {
+                        let bytes = sample.to_le_bytes();
+                        if writer.write_all(&bytes).is_err() {
+                            // Pipe might have closed if ffmpeg crashed
+                            break;
+                        }
+                    }
+                    let _ = writer.flush();
+                }
             }
             _ => {}
         }
