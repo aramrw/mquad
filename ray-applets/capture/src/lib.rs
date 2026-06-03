@@ -8,6 +8,23 @@ enum CaptureMode {
     Video,
 }
 
+#[derive(PartialEq, Clone, Copy, Debug)]
+enum AudioFormat {
+    Mp3,
+    Ogg,
+    Wav,
+}
+
+impl AudioFormat {
+    fn ext(&self) -> &str {
+        match self {
+            Self::Mp3 => \"mp3\",
+            Self::Ogg => \"ogg\",
+            Self::Wav => \"wav\",
+        }
+    }
+}
+
 pub struct CaptureApplet {
     active: bool,
     mode: CaptureMode,
@@ -16,11 +33,13 @@ pub struct CaptureApplet {
     selection_start: Option<Vec2>,
     selection_end: Option<Vec2>,
     recording_process: Option<std::process::Child>,
+    audio_only_process: Option<std::process::Child>,
     recording_filename: Option<String>,
     crf: i32,
     fps: i32,
     save_dir: String,
     audio_enabled: bool,
+    standalone_audio_format: AudioFormat,
     audio_stdin: Option<std::io::BufWriter<std::process::ChildStdin>>,
 }
 
@@ -34,11 +53,13 @@ impl CaptureApplet {
             selection_start: None,
             selection_end: None,
             recording_process: None,
+            audio_only_process: None,
             recording_filename: None,
             crf: 23,
             fps: 30,
-            save_dir: ".".to_string(),
+            save_dir: \".\".to_string(),
             audio_enabled: false,
+            standalone_audio_format: AudioFormat::Mp3,
             audio_stdin: None,
         }
     }
@@ -210,7 +231,15 @@ impl RayExtension for CaptureApplet {
             key: "R".to_string(),
             modifiers: HotkeyModifiers::CTRL | HotkeyModifiers::SHIFT,
             scope: HotkeyScope::Global,
-            description: "Capture Region Video".to_string(),
+            description: \"Capture Region Video\".to_string(),
+            internal_keycode: None,
+        });
+        ctx.register_hotkey(HotkeyDefinition {
+            id: \"capture_pure_audio\".to_string(),
+            key: \"A\".to_string(),
+            modifiers: HotkeyModifiers::CTRL | HotkeyModifiers::SHIFT,
+            scope: HotkeyScope::Global,
+            description: \"Capture Standalone Audio\".to_string(),
             internal_keycode: None,
         });
         Ok(())
