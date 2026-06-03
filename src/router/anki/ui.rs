@@ -61,6 +61,8 @@ impl YomichanApp {
                     FieldIndex::Definition(self.anki_field_def_idx),
                     FieldIndex::Sentence(self.anki_field_sentence_idx),
                 ]);
+                let _ = self.yomichan.save_settings(); // Persist to Yomichan DB
+                let _ = self.save_anki_settings_to_db(); // Persist UI state to Macroquad DB
             }
         }
         

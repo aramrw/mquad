@@ -187,6 +187,24 @@ impl YomichanApp {
         Ok(())
     }
 
+    pub fn save_anki_settings_to_db(&self) -> Result<(), rusqlite::Error> {
+        let conn = rusqlite::Connection::open("yomichan_rs/db.ycd")?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ray_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )",
+            [],
+        )?;
+        conn.execute("INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)", ["anki_deck_idx", &self.anki_deck_idx.to_string()])?;
+        conn.execute("INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)", ["anki_model_idx", &self.anki_model_idx.to_string()])?;
+        conn.execute("INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)", ["anki_field_term_idx", &self.anki_field_term_idx.to_string()])?;
+        conn.execute("INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)", ["anki_field_reading_idx", &self.anki_field_reading_idx.to_string()])?;
+        conn.execute("INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)", ["anki_field_def_idx", &self.anki_field_def_idx.to_string()])?;
+        conn.execute("INSERT OR REPLACE INTO ray_settings (key, value) VALUES (?1, ?2)", ["anki_field_sentence_idx", &self.anki_field_sentence_idx.to_string()])?;
+        Ok(())
+    }
+
     pub fn load_settings_from_db(&mut self) -> Result<(), rusqlite::Error> {
         let conn = rusqlite::Connection::open("yomichan_rs/db.ycd")?;
         // Check if table exists
@@ -224,6 +242,27 @@ impl YomichanApp {
                     // Fallback to ja if no settings exist yet
                     let _ = self.yomichan.set_language("ja");
                 }
+            }
+
+            // Load Anki Settings
+            {
+                let mut load_idx = |key: &str| -> Option<usize> {
+                    if let Ok(mut rows) = stmt.query([key]) {
+                        if let Ok(Some(row)) = rows.next() {
+                            if let Ok(val_str) = row.get::<_, String>(0) {
+                                return val_str.parse::<usize>().ok();
+                            }
+                        }
+                    }
+                    None
+                };
+
+                if let Some(idx) = load_idx("anki_deck_idx") { self.anki_deck_idx = idx; }
+                if let Some(idx) = load_idx("anki_model_idx") { self.anki_model_idx = idx; }
+                if let Some(idx) = load_idx("anki_field_term_idx") { self.anki_field_term_idx = idx; }
+                if let Some(idx) = load_idx("anki_field_reading_idx") { self.anki_field_reading_idx = idx; }
+                if let Some(idx) = load_idx("anki_field_def_idx") { self.anki_field_def_idx = idx; }
+                if let Some(idx) = load_idx("anki_field_sentence_idx") { self.anki_field_sentence_idx = idx; }
             }
         } else {
             // Table doesn't exist, default to ja
