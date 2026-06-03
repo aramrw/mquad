@@ -91,6 +91,21 @@ impl YomichanApp {
 
         for entry in &self.cached_entries {
             ui.label(None, &entry.headword);
+            ui.same_line(0.0);
+            if ui.button(None, format!("[+] Add to Anki##{}", entry.entry_index).as_str()) {
+                let cleaned = entry.headword.trim();
+                let mut term = cleaned.to_string();
+                let mut reading = String::new();
+                if let Some(idx) = cleaned.find(" (") {
+                    term = cleaned[0..idx].to_string();
+                    let end_idx = cleaned.find(")").unwrap_or(cleaned.len());
+                    reading = cleaned[idx+2..end_idx].to_string();
+                }
+                
+                let def_joined = entry.definitions.join("\n");
+                let _ = self.insert_anki_queue(&term, &reading, &def_joined, &entry.sentence);
+            }
+
             for def in &entry.definitions {
                 let chars: Vec<char> = def.chars().collect();
                 if chars.len() > max_chars {

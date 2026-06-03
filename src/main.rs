@@ -18,6 +18,8 @@ use crate::tracing_utils::ProgressLayer;
 pub struct CachedEntry {
     pub headword: String,
     pub definitions: Vec<String>,
+    pub sentence: String,
+    pub entry_index: usize,
 }
 
 pub struct YomichanApp {
@@ -122,7 +124,9 @@ impl YomichanApp {
             return;
         };
 
-        for entry in &segment.entries {
+        let sentence = self.search_query.clone();
+
+        for (i, entry) in segment.entries.iter().enumerate() {
             let headword = entry
                 .headwords
                 .iter()
@@ -139,6 +143,8 @@ impl YomichanApp {
             self.cached_entries.push(CachedEntry {
                 headword,
                 definitions,
+                sentence: sentence.clone(),
+                entry_index: i,
             });
         }
     }
