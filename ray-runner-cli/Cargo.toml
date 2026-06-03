@@ -1,0 +1,10 @@
+[package]
+name = "ray-runner-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ray-api = { path = "../ray-api" }
+ray-core = { path = "../ray-core" }
+anyhow = { workspace = true }
+clap = { workspace = true }

@@ -1,0 +1,11 @@
+[package]
+name = "ray-runner-macroquad"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ray-api = { path = "../ray-api" }
+ray-core = { path = "../ray-core" }
+macroquad = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }

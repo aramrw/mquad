@@ -1,0 +1,11 @@
+[package]
+name = "ray-applet-yomichan"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ray-api = { path = "../../ray-api" }
+macroquad = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+yomichan_rs = { path = "../../../yomichan/yomichan_rs_workspace/yomichan_rs", features = ["anki"] }

@@ -1,0 +1,19 @@
+[package]
+name = "ray-legacy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+macroquad = "0.4"
+yomichan_rs = { path = "../../../yomichan/yomichan_rs_workspace/yomichan_rs", features = ["anki"] }
+rusqlite = { version = "0.33", features = ["bundled"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-core = "0.1"
+rfd = "0.11"
+anki_direct = { git = "https://github.com/aramrw/anki_direct", branch = "note", features = ["cache"] }
+microfft = "0.5"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+url = "2.2"
