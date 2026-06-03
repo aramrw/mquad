@@ -10,5 +10,6 @@ anyhow = { workspace = true }
 crossbeam-channel = { workspace = true }
 clap = { workspace = true }
 rusqlite = { workspace = true }
+arboard = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = "0.3"
