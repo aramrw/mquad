@@ -1,4 +1,7 @@
-use ray_api::{RayExtension, RayContext, RayEvent, AudioEvent};
+use ray_api::{
+    AudioCommand, AudioEvent, HotkeyDefinition, HotkeyModifiers, HotkeyScope, RayCommand,
+    RayContext, RayEvent, RayExtension,
+};
 use macroquad::prelude::*;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
@@ -131,16 +134,30 @@ impl RayExtension for AudioApplet {
         "Audio"
     }
 
-    fn init(&mut self, _ctx: &mut RayContext, _args: &clap::ArgMatches) -> anyhow::Result<()> {
+    fn init(&mut self, ctx: &mut RayContext, _args: &clap::ArgMatches) -> anyhow::Result<()> {
+        ctx.register_hotkey(HotkeyDefinition {
+            id: "toggle_recording".to_string(),
+            key: "R".to_string(),
+            modifiers: HotkeyModifiers::CTRL,
+            scope: HotkeyScope::Global,
+            description: "Toggle Audio Recording".to_string(),
+            internal_keycode: None,
+        });
         Ok(())
     }
 
-    fn on_event(&mut self, _ctx: &mut RayContext, event: &RayEvent) -> anyhow::Result<()> {
-        if let RayEvent::Command(ray_api::RayCommand::Audio(cmd)) = event {
+    fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> anyhow::Result<()> {
+        if let RayEvent::HotkeyTriggered(id) = event {
+            if id == "toggle_recording" {
+                ctx.bus.send(RayEvent::Command(RayCommand::Audio(AudioCommand::ToggleRecording)));
+            }
+        }
+
+        if let RayEvent::Command(RayCommand::Audio(cmd)) = event {
             match cmd {
-                ray_api::AudioCommand::StartRecording => self.start_recording(),
-                ray_api::AudioCommand::StopRecording => self.stop_recording(),
-                ray_api::AudioCommand::ToggleRecording => {
+                AudioCommand::StartRecording => self.start_recording(),
+                AudioCommand::StopRecording => self.stop_recording(),
+                AudioCommand::ToggleRecording => {
                     if self.is_recording { self.stop_recording(); }
                     else { self.start_recording(); }
                 }

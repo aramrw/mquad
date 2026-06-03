@@ -13,3 +13,10 @@ macroquad = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 arboard = { workspace = true }
+global-hotkey = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }

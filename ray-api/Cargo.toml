@@ -10,3 +10,4 @@ anyhow = { workspace = true }
 crossbeam-channel = { workspace = true }
 clap = { workspace = true }
 tracing = "0.1"
+bitflags = { version = "2.4", features = ["serde"] }

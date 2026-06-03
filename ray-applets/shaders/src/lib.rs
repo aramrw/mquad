@@ -1,4 +1,4 @@
-use ray_api::{RayExtension, RayContext, RayEvent, AudioEvent};
+use ray_api::{RayExtension, RayContext, RayEvent, AudioEvent, HotkeyDefinition, HotkeyModifiers, HotkeyScope};
 use macroquad::prelude::*;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -23,6 +23,7 @@ pub struct ShaderApplet {
     rotation: f32,
     show_controls: bool,
     show_library: bool,
+    hud_visible: bool,
     
     // Internal cache
     last_modified: Option<SystemTime>,
@@ -47,6 +48,7 @@ impl ShaderApplet {
             rotation: 0.0,
             show_controls: true,
             show_library: true,
+            hud_visible: true,
             last_modified: None,
             material: None,
             render_target: None,
@@ -191,9 +193,19 @@ impl RayExtension for ShaderApplet {
         "Shader IDE"
     }
 
-    fn init(&mut self, _ctx: &mut RayContext, _args: &clap::ArgMatches) -> anyhow::Result<()> {
+    fn init(&mut self, ctx: &mut RayContext, _args: &clap::ArgMatches) -> anyhow::Result<()> {
         self.refresh_shader_list();
         self.reload_shader();
+
+        ctx.register_hotkey(HotkeyDefinition {
+            id: "toggle_hud".to_string(),
+            key: "H".to_string(),
+            modifiers: HotkeyModifiers::NONE,
+            scope: HotkeyScope::Local,
+            description: "Toggle Shader IDE HUD".to_string(),
+            internal_keycode: None,
+        });
+
         Ok(())
     }
 
@@ -205,24 +217,32 @@ impl RayExtension for ShaderApplet {
     }
 
     fn on_event(&mut self, _ctx: &mut RayContext, event: &RayEvent) -> anyhow::Result<()> {
-        if let RayEvent::Audio(audio_ev) = event {
-            match audio_ev {
-                AudioEvent::Level(vol) => self.volume = *vol,
-                AudioEvent::Spectrum(data) => {
-                    if self.spectrum_texture.is_none() {
-                        self.spectrum_texture = Some(Texture2D::from_rgba8(512, 1, &vec![0u8; 512 * 4]));
-                    }
-                    if let Some(tex) = &self.spectrum_texture {
-                        let mut bytes = Vec::with_capacity(512 * 4);
-                        for &val in data {
-                            let b = (val * 255.0).clamp(0.0, 255.0) as u8;
-                            bytes.push(b); bytes.push(b); bytes.push(b); bytes.push(255);
+        match event {
+            RayEvent::Audio(audio_ev) => {
+                match audio_ev {
+                    AudioEvent::Level(vol) => self.volume = *vol,
+                    AudioEvent::Spectrum(data) => {
+                        if self.spectrum_texture.is_none() {
+                            self.spectrum_texture = Some(Texture2D::from_rgba8(512, 1, &vec![0u8; 512 * 4]));
                         }
-                        tex.update_from_bytes(512, 1, &bytes);
+                        if let Some(tex) = &self.spectrum_texture {
+                            let mut bytes = Vec::with_capacity(512 * 4);
+                            for &val in data {
+                                let b = (val * 255.0).clamp(0.0, 255.0) as u8;
+                                bytes.push(b); bytes.push(b); bytes.push(b); bytes.push(255);
+                            }
+                            tex.update_from_bytes(512, 1, &bytes);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
+            RayEvent::HotkeyTriggered(id) => {
+                if id == "toggle_hud" {
+                    self.hud_visible = !self.hud_visible;
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -343,58 +363,60 @@ impl RayExtension for ShaderApplet {
         }
 
         // 2. Draw the HUDs
-        use macroquad::ui::{root_ui, hash};
-        
-        root_ui().checkbox(hash!("sh_ctrl"), "Controls", &mut self.show_controls);
-        root_ui().same_line(0.0);
-        root_ui().checkbox(hash!("sh_lib"), "Library", &mut self.show_library);
+        if self.hud_visible {
+            use macroquad::ui::{root_ui, hash};
+            
+            root_ui().checkbox(hash!("sh_ctrl"), "Controls", &mut self.show_controls);
+            root_ui().same_line(0.0);
+            root_ui().checkbox(hash!("sh_lib"), "Library", &mut self.show_library);
 
-        if self.show_controls {
-            macroquad::ui::widgets::Window::new(hash!("sh_win"), vec2(10.0, 110.0), vec2(300.0, 250.0))
-                .label("Shader Settings")
-                .ui(&mut root_ui(), |ui| {
-                    ui.label(None, &format!("Active: {}", self.selected_shader));
-                    ui.separator();
-                    ui.label(None, "Shape:");
-                    if ui.button(None, "Full") { self.render_mode = RenderMode::Fullscreen; }
-                    ui.same_line(0.0);
-                    if ui.button(None, "Cube") { self.render_mode = RenderMode::Cube; }
-                    ui.same_line(0.0);
-                    if ui.button(None, "Sphere") { self.render_mode = RenderMode::Sphere; }
-                    ui.same_line(0.0);
-                    if ui.button(None, "Pyramid") { self.render_mode = RenderMode::Pyramid; }
-                    
-                    ui.separator();
-                    let res_text = format!("Pixel Scale: {}x", self.resolution_scale);
-                    ui.label(None, &res_text);
-                    if ui.button(None, "Cycle Scale") {
-                        self.resolution_scale *= 2;
-                        if self.resolution_scale > 32 { self.resolution_scale = 1; }
-                    }
-                    
-                    ui.separator();
-                    if ui.button(None, "Toggle Audio") {
-                        _ctx.bus.send(RayEvent::Command(ray_api::RayCommand::Audio(ray_api::AudioCommand::ToggleRecording)));
-                    }
-
-                    if ui.button(None, "Manual Compile") { self.reload_shader(); }
-                });
-        }
-
-        if self.show_library {
-            macroquad::ui::widgets::Window::new(hash!("sh_lib_win"), vec2(320.0, 110.0), vec2(250.0, 400.0))
-                .label("Shader Library")
-                .ui(&mut root_ui(), |ui| {
-                    if ui.button(None, "Refresh List") { self.refresh_shader_list(); }
-                    ui.separator();
-                    for (name, _) in self.available_shaders.clone() {
-                        let label = if self.selected_shader == name { format!("> {}", name) } else { name.clone() };
-                        if ui.button(None, label.as_str()) {
-                            self.selected_shader = name;
-                            self.last_modified = None;
+            if self.show_controls {
+                macroquad::ui::widgets::Window::new(hash!("sh_win"), vec2(10.0, 110.0), vec2(300.0, 250.0))
+                    .label("Shader Settings")
+                    .ui(&mut root_ui(), |ui| {
+                        ui.label(None, &format!("Active: {}", self.selected_shader));
+                        ui.separator();
+                        ui.label(None, "Shape:");
+                        if ui.button(None, "Full") { self.render_mode = RenderMode::Fullscreen; }
+                        ui.same_line(0.0);
+                        if ui.button(None, "Cube") { self.render_mode = RenderMode::Cube; }
+                        ui.same_line(0.0);
+                        if ui.button(None, "Sphere") { self.render_mode = RenderMode::Sphere; }
+                        ui.same_line(0.0);
+                        if ui.button(None, "Pyramid") { self.render_mode = RenderMode::Pyramid; }
+                        
+                        ui.separator();
+                        let res_text = format!("Pixel Scale: {}x", self.resolution_scale);
+                        ui.label(None, &res_text);
+                        if ui.button(None, "Cycle Scale") {
+                            self.resolution_scale *= 2;
+                            if self.resolution_scale > 32 { self.resolution_scale = 1; }
                         }
-                    }
-                });
+                        
+                        ui.separator();
+                        if ui.button(None, "Toggle Audio") {
+                            _ctx.bus.send(RayEvent::Command(ray_api::RayCommand::Audio(ray_api::AudioCommand::ToggleRecording)));
+                        }
+
+                        if ui.button(None, "Manual Compile") { self.reload_shader(); }
+                    });
+            }
+
+            if self.show_library {
+                macroquad::ui::widgets::Window::new(hash!("sh_lib_win"), vec2(320.0, 110.0), vec2(250.0, 400.0))
+                    .label("Shader Library")
+                    .ui(&mut root_ui(), |ui| {
+                        if ui.button(None, "Refresh List") { self.refresh_shader_list(); }
+                        ui.separator();
+                        for (name, _) in self.available_shaders.clone() {
+                            let label = if self.selected_shader == name { format!("> {}", name) } else { name.clone() };
+                            if ui.button(None, label.as_str()) {
+                                self.selected_shader = name;
+                                self.last_modified = None;
+                            }
+                        }
+                    });
+            }
         }
         
         Ok(())

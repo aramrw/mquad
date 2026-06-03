@@ -1,11 +1,18 @@
 use macroquad::prelude::*;
 use ray_core::RayEngine;
 use clap::Command;
+use global_hotkey::{GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, GlobalHotKeyEvent};
+use std::str::FromStr;
+
+#[cfg(target_os = "macos")]
+use core_foundation::runloop::{CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 
 #[macroquad::main("Ray")]
 async fn main() {
     let mut engine = RayEngine::new("framework_settings.db");
     
+    let mut os_hotkey_manager = OsHotkeyManager::new();
+
     engine.register(ray_applet_yomichan::YomichanApplet::new());
     engine.register(ray_applet_shaders::ShaderApplet::new());
     engine.register(ray_applet_audio::AudioApplet::new());
@@ -24,11 +31,24 @@ async fn main() {
 
     let mut show_settings = false;
     let mut active_settings_idx: Option<usize> = None;
+    let mut settings_tab = 0; // 0 for Extensions, 1 for Hotkeys
     let mut show_console = false;
     let mut console_logs: Vec<ray_api::LogEvent> = Vec::new();
 
     loop {
         clear_background(BLACK);
+
+        #[cfg(target_os = "macos")]
+        unsafe {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.00001, 0);
+        }
+
+        // Sync and Poll OS hotkeys
+        if engine.is_hotkey_registry_dirty() {
+            os_hotkey_manager.sync(&engine);
+            engine.clear_hotkey_registry_dirty();
+        }
+        os_hotkey_manager.poll(&mut engine);
 
         let dt = get_frame_time();
         
@@ -57,113 +77,9 @@ async fn main() {
                 break;
             }
         } else if show_settings {
-            use macroquad::ui::{root_ui, hash};
-            
-            macroquad::ui::widgets::Window::new(
-                hash!("settings_win"),
-                vec2(50.0, 50.0),
-                vec2(400.0, 500.0)
-            )
-            .label(if active_settings_idx.is_some() { "Extension Config" } else { "Framework Settings" })
-            .ui(&mut root_ui(), |ui| {
-                if let Some(idx) = active_settings_idx {
-                    if let Some((name, _)) = engine.get_extension_info(idx) {
-                        ui.label(None, &format!("Configuring: {}", name));
-                        if ui.button(None, "<- Back to Settings") {
-                            active_settings_idx = None;
-                        }
-                        ui.separator();
-                        if let Err(e) = engine.render_extension_settings(idx, ui) {
-                            ui.label(None, &format!("Error rendering settings: {}", e));
-                        }
-                    }
-                } else {
-                    ui.label(None, "Registered Extensions:");
-                    ui.separator();
-                    
-                    let count = engine.extension_count();
-                    for i in 0..count {
-                        if let Some((name, mut enabled)) = engine.get_extension_info(i) {
-                            ui.checkbox(hash!(format!("ext_{}", i)), name, &mut enabled);
-                            
-                            if engine.extension_has_settings(i) {
-                                ui.same_line(0.0);
-                                if ui.button(None, "Configure") {
-                                    active_settings_idx = Some(i);
-                                }
-                            }
-
-                            if let Some((_, actual_enabled)) = engine.get_extension_info(i) {
-                                if enabled != actual_enabled {
-                                    engine.toggle_extension(i);
-                                }
-                            }
-                        }
-                    }
-                }
-            });
+            render_settings_ui(&mut engine, &mut active_settings_idx, &mut settings_tab);
         } else if show_console {
-            use macroquad::ui::{root_ui, hash};
-            let win_width = screen_width() - 100.0;
-            let win_height = screen_height() - 150.0;
-            
-            macroquad::ui::widgets::Window::new(
-                hash!("console_win"),
-                vec2(50.0, 50.0),
-                vec2(win_width, win_height)
-            )
-            .label("Debug Console")
-            .ui(&mut root_ui(), |ui| {
-                if ui.button(None, "Clear") {
-                    console_logs.clear();
-                }
-                ui.same_line(0.0);
-                if ui.button(None, "Copy All") {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let all_logs: String = console_logs.iter()
-                            .map(|log| format!("[{}] [{}] {}", log.level_str(), log.target, log.message))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        let _ = clipboard.set_text(all_logs);
-                    }
-                }
-                ui.separator();
-
-                // Roughly estimate characters per line based on window width
-                // Default font is roughly 8px wide per char
-                let chars_per_line = ((win_width - 100.0) / 8.5) as usize;
-
-                for log in console_logs.iter().rev().take(100) {
-                    let full_msg = format!("[{}] [{}] {}", log.level_str(), log.target, log.message);
-                    
-                    if ui.button(None, "Copy") {
-                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                            let _ = clipboard.set_text(full_msg.clone());
-                        }
-                    }
-                    ui.same_line(0.0);
-                    
-                    // Simple word wrap logic
-                    if full_msg.len() > chars_per_line {
-                        let mut remaining = full_msg.as_str();
-                        let mut first = true;
-                        while !remaining.is_empty() {
-                            let end = remaining.len().min(chars_per_line);
-                            let chunk = &remaining[..end];
-                            if !first {
-                                // Indent wrapped lines slightly and skip the button space
-                                ui.label(None, &format!("       {}", chunk));
-                            } else {
-                                ui.label(None, chunk);
-                                first = false;
-                            }
-                            remaining = &remaining[end..];
-                        }
-                    } else {
-                        ui.label(None, &full_msg);
-                    }
-                }
-            });
+            render_console_ui(&mut console_logs);
         }
 
         // Draw Tab Bar
@@ -211,4 +127,262 @@ async fn main() {
 
         next_frame().await;
     }
+}
+
+fn ray_to_global_modifiers(m: ray_api::HotkeyModifiers) -> Modifiers {
+    let mut out = Modifiers::empty();
+    if m.contains(ray_api::HotkeyModifiers::SHIFT) { out |= Modifiers::SHIFT; }
+    if m.contains(ray_api::HotkeyModifiers::CTRL) { out |= Modifiers::CONTROL; }
+    if m.contains(ray_api::HotkeyModifiers::ALT) { out |= Modifiers::ALT; }
+    if m.contains(ray_api::HotkeyModifiers::LOGO) { out |= Modifiers::SUPER; }
+    out
+}
+
+fn ray_to_global_code(key: &str) -> Option<Code> {
+    Code::from_str(&format!("Key{}", key)).ok()
+        .or_else(|| Code::from_str(key).ok())
+}
+
+struct OsHotkeyManager {
+    manager: Option<GlobalHotKeyManager>,
+    registered: std::collections::HashMap<(String, String), HotKey>,
+}
+
+impl OsHotkeyManager {
+    fn new() -> Self {
+        let manager = GlobalHotKeyManager::new().map_err(|e| {
+            eprintln!("GlobalHotKeyManager error: {:?}", e);
+            e
+        }).ok();
+        Self {
+            manager,
+            registered: std::collections::HashMap::new(),
+        }
+    }
+
+    fn sync(&mut self, engine: &RayEngine) {
+        let Some(manager) = &self.manager else { return };
+
+        let mut current_global_keys = std::collections::HashSet::new();
+        for (key, def) in &engine.hotkey_registry.registered {
+            if def.scope == ray_api::HotkeyScope::Global {
+                current_global_keys.insert(key.clone());
+            }
+        }
+
+        // Unregister removed
+        let to_remove: Vec<_> = self.registered.keys()
+            .filter(|k| !current_global_keys.contains(*k))
+            .cloned()
+            .collect();
+
+        for key in to_remove {
+            if let Some(hotkey) = self.registered.remove(&key) {
+                let _ = manager.unregister(hotkey);
+            }
+        }
+
+        // Register new
+        for key in current_global_keys {
+            if !self.registered.contains_key(&key) {
+                if let Some(def) = engine.hotkey_registry.registered.get(&key) {
+                    if let Some(code) = ray_to_global_code(&def.key) {
+                        let mods = ray_to_global_modifiers(def.modifiers);
+                        let hotkey = HotKey::new(Some(mods), code);
+                        if let Ok(_) = manager.register(hotkey) {
+                            self.registered.insert(key, hotkey);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn poll(&self, engine: &mut RayEngine) {
+        if self.manager.is_none() { return; }
+        while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+            if event.state == global_hotkey::HotKeyState::Pressed {
+                for ((_, hotkey_id), hotkey) in &self.registered {
+                    if hotkey.id() == event.id {
+                        engine.bus().send(ray_api::RayEvent::HotkeyTriggered(hotkey_id.clone()));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn render_settings_ui(engine: &mut RayEngine, active_settings_idx: &mut Option<usize>, settings_tab: &mut usize) {
+    use macroquad::ui::{root_ui, hash};
+    
+    macroquad::ui::widgets::Window::new(
+        hash!("settings_win"),
+        vec2(50.0, 50.0),
+        vec2(500.0, 600.0)
+    )
+    .label(if active_settings_idx.is_some() { "Extension Config" } else { "Framework Settings" })
+    .ui(&mut root_ui(), |ui| {
+        if let Some(idx) = *active_settings_idx {
+            if let Some((name, _)) = engine.get_extension_info(idx) {
+                ui.label(None, &format!("Configuring: {}", name));
+                if ui.button(None, "<- Back to Settings") {
+                    *active_settings_idx = None;
+                }
+                ui.separator();
+                if let Err(e) = engine.render_extension_settings(idx, ui) {
+                    ui.label(None, &format!("Error rendering settings: {}", e));
+                }
+            }
+        } else {
+            // Tab Buttons
+            if ui.button(None, if *settings_tab == 0 { "[ Extensions ]" } else { " Extensions " }) {
+                *settings_tab = 0;
+            }
+            ui.same_line(0.0);
+            if ui.button(None, if *settings_tab == 1 { "[ Hotkeys ]" } else { " Hotkeys " }) {
+                *settings_tab = 1;
+            }
+            ui.separator();
+
+            if *settings_tab == 0 {
+                render_extensions_tab(engine, ui, active_settings_idx);
+            } else {
+                render_hotkeys_tab(engine, ui);
+            }
+        }
+    });
+}
+
+fn render_extensions_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui, active_settings_idx: &mut Option<usize>) {
+    use macroquad::ui::hash;
+    ui.label(None, "Registered Extensions:");
+    ui.separator();
+    
+    let count = engine.extension_count();
+    for i in 0..count {
+        if let Some((name, mut enabled)) = engine.get_extension_info(i) {
+            ui.checkbox(hash!(i, "ext_check"), name, &mut enabled);
+            
+            if engine.extension_has_settings(i) {
+                ui.same_line(0.0);
+                if ui.button(None, "Configure") {
+                    *active_settings_idx = Some(i);
+                }
+            }
+
+            if let Some((_, actual_enabled)) = engine.get_extension_info(i) {
+                if enabled != actual_enabled {
+                    engine.toggle_extension(i);
+                }
+            }
+        }
+    }
+}
+
+fn render_hotkeys_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
+    ui.label(None, "Hotkey Registry:");
+    ui.separator();
+
+    // Group by applet
+    let mut grouped: std::collections::BTreeMap<String, Vec<(&String, &ray_api::HotkeyDefinition)>> = std::collections::BTreeMap::new();
+    for ((applet, id), def) in &engine.hotkey_registry.registered {
+        grouped.entry(applet.clone()).or_default().push((id, def));
+    }
+
+    // Conflicts are now cached in the engine
+    let conflicts = &engine.hotkey_registry.conflicts;
+
+    for (applet, hotkeys) in grouped {
+        ui.label(None, &format!("Applet: {}", applet));
+        for (id, def) in hotkeys {
+            let is_conflict = conflicts.iter().any(|(p1, p2)| {
+                (p1.0 == applet && p1.1 == *id) || (p2.0 == applet && p2.1 == *id)
+            });
+            
+            let mut mods_parts = Vec::new();
+            if def.modifiers.contains(ray_api::HotkeyModifiers::CTRL) { mods_parts.push("Ctrl"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::SHIFT) { mods_parts.push("Shift"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::ALT) { mods_parts.push("Alt"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::LOGO) { mods_parts.push("Logo"); }
+            
+            let key_combo = if mods_parts.is_empty() {
+                def.key.clone()
+            } else {
+                format!("{}+{}", mods_parts.join("+"), def.key)
+            };
+
+            let label = format!("{}: {} ({}) [{:?}]", id, def.description, key_combo, def.scope);
+            
+            if is_conflict {
+                ui.label(None, &format!("!!! CONFLICT !!! {}", label));
+            } else {
+                ui.label(None, &label);
+            }
+        }
+        ui.separator();
+    }
+}
+
+fn render_console_ui(console_logs: &mut Vec<ray_api::LogEvent>) {
+    use macroquad::ui::{root_ui, hash};
+    let win_width = screen_width() - 100.0;
+    let win_height = screen_height() - 150.0;
+    
+    macroquad::ui::widgets::Window::new(
+        hash!("console_win"),
+        vec2(50.0, 50.0),
+        vec2(win_width, win_height)
+    )
+    .label("Debug Console")
+    .ui(&mut root_ui(), |ui| {
+        if ui.button(None, "Clear") {
+            console_logs.clear();
+        }
+        ui.same_line(0.0);
+        if ui.button(None, "Copy All") {
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let all_logs: String = console_logs.iter()
+                    .map(|log| format!("[{}] [{}] {}", log.level_str(), log.target, log.message))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let _ = clipboard.set_text(all_logs);
+            }
+        }
+        ui.separator();
+
+        // Roughly estimate characters per line based on window width
+        // Default font is roughly 8px wide per char
+        let chars_per_line = ((win_width - 100.0) / 8.5) as usize;
+
+        for log in console_logs.iter().rev().take(100) {
+            let full_msg = format!("[{}] [{}] {}", log.level_str(), log.target, log.message);
+            
+            if ui.button(None, "Copy") {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(full_msg.clone());
+                }
+            }
+            ui.same_line(0.0);
+            
+            // Simple word wrap logic
+            if full_msg.len() > chars_per_line {
+                let mut remaining = full_msg.as_str();
+                let mut first = true;
+                while !remaining.is_empty() {
+                    let end = remaining.len().min(chars_per_line);
+                    let chunk = &remaining[..end];
+                    if !first {
+                        // Indent wrapped lines slightly and skip the button space
+                        ui.label(None, &format!("       {}", chunk));
+                    } else {
+                        ui.label(None, chunk);
+                        first = false;
+                    }
+                    remaining = &remaining[end..];
+                }
+            } else {
+                ui.label(None, &full_msg);
+            }
+        }
+    });
 }
