@@ -135,6 +135,20 @@ impl RayExtension for AudioApplet {
         Ok(())
     }
 
+    fn on_event(&mut self, _ctx: &mut RayContext, event: &RayEvent) -> anyhow::Result<()> {
+        if let RayEvent::Command(ray_api::RayCommand::Audio(cmd)) = event {
+            match cmd {
+                ray_api::AudioCommand::StartRecording => self.start_recording(),
+                ray_api::AudioCommand::StopRecording => self.stop_recording(),
+                ray_api::AudioCommand::ToggleRecording => {
+                    if self.is_recording { self.stop_recording(); }
+                    else { self.start_recording(); }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn update(&mut self, ctx: &mut RayContext) -> anyhow::Result<()> {
         if let Some(erx) = &self.error_receiver {
             while let Ok(err) = erx.try_recv() {

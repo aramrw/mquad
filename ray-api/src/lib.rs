@@ -18,6 +18,16 @@ pub trait RayExtension: Any {
     fn on_event(&mut self, _ctx: &mut RayContext, _event: &RayEvent) -> anyhow::Result<()> {
         Ok(())
     }
+
+    /// Render extension-specific settings UI.
+    fn settings_ui(&mut self, _ctx: &mut RayContext, _ui: &mut macroquad::ui::Ui) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Does this extension have a settings page?
+    fn has_settings(&self) -> bool {
+        false
+    }
     
     /// Cleanup before the applet is dropped.
     fn shutdown(&mut self, _ctx: &mut RayContext) -> anyhow::Result<()> {
@@ -35,7 +45,56 @@ pub struct RayContext<'a> {
 pub enum RayEvent {
     Input(InputEvent),
     Audio(AudioEvent),
+    Log(LogEvent),
+    Command(RayCommand),
     Custom(Box<dyn Any + Send + Sync>),
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum RayCommand {
+    Audio(AudioCommand),
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum AudioCommand {
+    StartRecording,
+    StopRecording,
+    ToggleRecording,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LogLevel::Error => "ERROR",
+            LogLevel::Warn => "WARN ",
+            LogLevel::Info => "INFO ",
+            LogLevel::Debug => "DEBUG",
+            LogLevel::Trace => "TRACE",
+        }
+    }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct LogEvent {
+    pub level: LogLevel,
+    pub target: String,
+    pub message: String,
+    pub timestamp: f64,
+}
+
+impl LogEvent {
+    pub fn level_str(&self) -> &'static str {
+        self.level.as_str()
+    }
 }
 
 pub enum InputEvent {
@@ -49,6 +108,7 @@ pub enum AudioEvent {
     Spectrum(Vec<f32>),
 }
 
+#[derive(Clone)]
 pub struct RayEventBus {
     sender: crossbeam_channel::Sender<RayEvent>,
     receiver: crossbeam_channel::Receiver<RayEvent>,

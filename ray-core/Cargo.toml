@@ -9,3 +9,6 @@ macroquad = { workspace = true }
 anyhow = { workspace = true }
 crossbeam-channel = { workspace = true }
 clap = { workspace = true }
+rusqlite = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = "0.3"

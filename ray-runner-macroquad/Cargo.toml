@@ -12,3 +12,4 @@ ray-applet-audio = { path = "../ray-applets/audio" }
 macroquad = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+arboard = { workspace = true }

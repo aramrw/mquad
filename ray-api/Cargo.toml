@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 macroquad = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 anyhow = { workspace = true }
 crossbeam-channel = { workspace = true }
 clap = { workspace = true }
+tracing = "0.1"

@@ -8,3 +8,5 @@ ray-api = { path = "../../ray-api" }
 macroquad = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+serde = { workspace = true }
+tracing = "0.1"

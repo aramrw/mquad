@@ -15,3 +15,5 @@ anyhow = "1.0"
 crossbeam-channel = "0.5"
 clap = { version = "4.0", features = ["derive"] }
 microfft = "0.5"
+rusqlite = { version = "0.33", features = ["bundled"] }
+arboard = "3.4"
