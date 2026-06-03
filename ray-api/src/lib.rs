@@ -13,6 +13,11 @@ pub trait RayExtension: Any {
     
     /// Rendering loop.
     fn render(&mut self, ctx: &mut RayContext) -> anyhow::Result<()>;
+
+    /// Event handler.
+    fn on_event(&mut self, _ctx: &mut RayContext, _event: &RayEvent) -> anyhow::Result<()> {
+        Ok(())
+    }
     
     /// Cleanup before the applet is dropped.
     fn shutdown(&mut self, _ctx: &mut RayContext) -> anyhow::Result<()> {
@@ -41,6 +46,7 @@ pub enum InputEvent {
 pub enum AudioEvent {
     Level(f32),
     Buffer(Vec<f32>),
+    Spectrum(Vec<f32>),
 }
 
 pub struct RayEventBus {

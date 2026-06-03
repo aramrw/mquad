@@ -4,6 +4,7 @@ use anyhow::Result;
 pub struct RayEngine {
     extensions: Vec<Box<dyn RayExtension>>,
     bus: RayEventBus,
+    pub active_extension_idx: usize,
 }
 
 impl RayEngine {
@@ -11,7 +12,12 @@ impl RayEngine {
         Self {
             extensions: Vec::new(),
             bus: RayEventBus::new(),
+            active_extension_idx: 0,
         }
+    }
+
+    pub fn extension_names(&self) -> Vec<String> {
+        self.extensions.iter().map(|e| e.name().to_string()).collect()
     }
 
     pub fn register<E: RayExtension + 'static>(&mut self, extension: E) {
@@ -36,6 +42,14 @@ impl RayEngine {
             screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
             bus: &self.bus,
         };
+
+        // Drain the bus and dispatch to on_event
+        while let Some(event) = self.bus.poll() {
+            for ext in &mut self.extensions {
+                ext.on_event(&mut ctx, &event)?;
+            }
+        }
+
         for ext in &mut self.extensions {
             ext.update(&mut ctx)?;
         }
@@ -48,9 +62,11 @@ impl RayEngine {
             screen_size: (macroquad::window::screen_width(), macroquad::window::screen_height()),
             bus: &self.bus,
         };
-        for ext in &mut self.extensions {
+        
+        if let Some(ext) = self.extensions.get_mut(self.active_extension_idx) {
             ext.render(&mut ctx)?;
         }
+        
         Ok(())
     }
 }
