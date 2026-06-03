@@ -153,6 +153,15 @@ impl RayEngine {
             )",
             [],
         )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS applet_configs (
+                applet TEXT,
+                key TEXT,
+                value TEXT,
+                PRIMARY KEY (applet, key)
+            )",
+            [],
+        )?;
         Ok(())
     }
 
@@ -570,4 +579,3 @@ mod tests {
         Ok(())
     }
 }
-
