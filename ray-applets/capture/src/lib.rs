@@ -65,24 +65,36 @@ impl CaptureApplet {
     }
 
     fn save_settings(&self) -> Result<()> {
-        let conn = rusqlite::Connection::open("framework_settings.db")?;
+        let conn = rusqlite::Connection::open(\"framework_settings.db\")?;
         conn.execute(
-            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
-            rusqlite::params!["capture", "audio_enabled", self.audio_enabled.to_string()],
+            \"INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)\",
+            rusqlite::params![\"capture\", \"audio_enabled\", self.audio_enabled.to_string()],
+        )?;
+        conn.execute(
+            \"INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)\",
+            rusqlite::params![\"capture\", \"standalone_audio_format\", format!(\"{:?}\", self.standalone_audio_format)],
         )?;
         Ok(())
     }
 
     fn load_settings(&mut self) {
-        if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
-            let mut stmt = conn.prepare("SELECT key, value FROM applet_configs WHERE applet = ?1").ok().unwrap();
-            let rows = stmt.query_map(rusqlite::params!["capture"], |row| {
+        if let Ok(conn) = rusqlite::Connection::open(\"framework_settings.db\") {
+            let mut stmt = conn.prepare(\"SELECT key, value FROM applet_configs WHERE applet = ?1\").ok().unwrap();
+            let rows = stmt.query_map(rusqlite::params![\"capture\"], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             }).ok().unwrap();
 
             for row in rows.flatten() {
                 match row.0.as_str() {
-                    "audio_enabled" => self.audio_enabled = row.1.parse().unwrap_or(false),
+                    \"audio_enabled\" => self.audio_enabled = row.1.parse().unwrap_or(false),
+                    \"standalone_audio_format\" => {
+                        match row.1.as_str() {
+                            \"Mp3\" => self.standalone_audio_format = AudioFormat::Mp3,
+                            \"Ogg\" => self.standalone_audio_format = AudioFormat::Ogg,
+                            \"Wav\" => self.standalone_audio_format = AudioFormat::Wav,
+                            _ => {}
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -445,8 +457,29 @@ impl RayExtension for CaptureApplet {
         self.crf = crf as i32;
         
         let mut fps = self.fps as f32;
-        ui.slider(hash!("fps_slider"), "Framerate (FPS)", 10.0..60.0, &mut fps);
+        ui.slider(hash!(\"fps_slider\"), \"Framerate (FPS)\", 10.0..60.0, &mut fps);
         self.fps = fps as i32;
+
+        ui.separator();
+        ui.label(None, \"Standalone Audio Recording:\");
+        
+        let mut format_idx = match self.standalone_audio_format {
+            AudioFormat::Mp3 => 0,
+            AudioFormat::Ogg => 1,
+            AudioFormat::Wav => 2,
+        };
+        
+        let old_idx = format_idx;
+        ui.combo_box(hash!(\"audio_format\"), \"Format\", &[\"MP3\", \"OGG\", \"WAV\"], &mut format_idx);
+        if format_idx != old_idx {
+            self.standalone_audio_format = match format_idx {
+                0 => AudioFormat::Mp3,
+                1 => AudioFormat::Ogg,
+                2 => AudioFormat::Wav,
+                _ => AudioFormat::Mp3,
+            };
+            let _ = self.save_settings();
+        }
         
         Ok(())
     }
