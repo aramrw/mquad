@@ -148,12 +148,45 @@ impl CaptureApplet {
         Ok(())
     }
 
+    fn start_audio_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
+        let timestamp = chrono::Local::now().format(\"%Y%m%d_%H%M%S\").to_string();
+        let filename = format!(\"audio_{}.{}\", timestamp, self.standalone_audio_format.ext());
+        let path = std::path::Path::new(&self.save_dir).join(filename);
+
+        let mut cmd = std::process::Command::new(\"ffmpeg\");
+        cmd.args(&[\"-f\", \"f32le\", \"-ar\", \"44100\", \"-ac\", \"1\", \"-i\", \"-\"]);
+        
+        match self.standalone_audio_format {
+            AudioFormat::Mp3 => { cmd.args(&[\"-c:a\", \"libmp3lame\"]); }
+            AudioFormat::Ogg => { cmd.args(&[\"-c:a\", \"libvorbis\"]); }
+            AudioFormat::Wav => { /* pcm by default */ }
+        }
+        
+        cmd.arg(path.to_str().unwrap());
+        cmd.stdin(std::process::Stdio::piped());
+        
+        let mut child = cmd.spawn()?;
+        if let Some(stdin) = child.stdin.take() {
+            self.audio_stdin = Some(std::io::BufWriter::new(stdin));
+        }
+        self.audio_only_process = Some(child);
+        
+        // Ensure audio feed is on
+        ctx.bus.send(RayEvent::Command(RayCommand::Audio(ray_api::AudioCommand::StartRecording)));
+        tracing::info!(\"Started standalone audio recording to {:?}\", self.audio_only_process);
+        Ok(())
+    }
+
     fn stop_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
         self.audio_stdin = None; // Dropping BufWriter closes the pipe
         if let Some(mut child) = self.recording_process.take() {
             let _ = child.kill();
             ctx.send_command(RayCommand::MiniMode(false));
-            tracing::info!("Stopped recording. Saved to {:?}", self.recording_filename.take());
+            tracing::info!(\"Stopped recording. Saved to {:?}\", self.recording_filename.take());
+        }
+        if let Some(mut child) = self.audio_only_process.take() {
+            let _ = child.kill();
+            tracing::info!(\"Stopped audio recording.\");
         }
         Ok(())
     }
@@ -260,17 +293,24 @@ impl RayExtension for CaptureApplet {
                     self.selection_end = None;
                 }
             }
-            RayEvent::HotkeyTriggered(id) if id == "region_video" => {
+            RayEvent::HotkeyTriggered(id) if id == \"region_video\" => {
                 if self.recording_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Video;
-                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
+                    ctx.send_command(RayCommand::SelectExtension(\"Capture\".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
                     self.selection_end = None;
+                }
+            }
+            RayEvent::HotkeyTriggered(id) if id == \"capture_pure_audio\" => {
+                if self.audio_only_process.is_some() {
+                    self.stop_recording(ctx)?;
+                } else {
+                    self.start_audio_recording(ctx)?;
                 }
             }
             RayEvent::Audio(AudioEvent::Buffer(samples)) => {
