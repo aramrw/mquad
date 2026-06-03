@@ -266,6 +266,7 @@ impl RayEngine {
                 bus: &self.bus,
                 applet_name: entry.instance.name().to_string(),
                 is_active: true,
+                clipboard: self.clipboard.as_mut(),
             };
             entry.instance.settings_ui(&mut ctx, ui)?;
         }
@@ -287,6 +288,7 @@ impl RayEngine {
                 bus: &self.bus,
                 applet_name: entry.instance.name().to_string(),
                 is_active: false,
+                clipboard: self.clipboard.as_mut(),
             };
             entry.instance.init(&mut ctx, args)?;
         }
@@ -330,6 +332,7 @@ impl RayEngine {
                         bus: &self.bus,
                         applet_name: entry.instance.name().to_string(),
                         is_active,
+                        clipboard: self.clipboard.as_mut(),
                     };
                     if let Err(e) = entry.instance.on_event(&mut ctx, &event) {
                         tracing::error!("[{}] on_event error: {}", entry.instance.name(), e);
@@ -347,6 +350,7 @@ impl RayEngine {
                     bus: &self.bus,
                     applet_name: entry.instance.name().to_string(),
                     is_active,
+                    clipboard: self.clipboard.as_mut(),
                 };
                 if let Err(e) = entry.instance.update(&mut ctx) {
                     tracing::error!("[{}] update error: {}", entry.instance.name(), e);
@@ -368,6 +372,7 @@ impl RayEngine {
                         bus: &self.bus,
                         applet_name: entry.instance.name().to_string(),
                         is_active: true,
+                        clipboard: self.clipboard.as_mut(),
                     };
                     if let Err(e) = entry.instance.render(&mut ctx) {
                         tracing::error!("[{}] render error: {}", entry.instance.name(), e);
