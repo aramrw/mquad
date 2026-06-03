@@ -174,7 +174,7 @@ impl RayExtension for AudioApplet {
         true
     }
 
-    fn settings_ui(&mut self, _ctx: &mut RayContext, ui: &mut macroquad::ui::Ui) -> anyhow::Result<()> {
+    fn settings_ui(&mut self, ctx: &mut RayContext, ui: &mut macroquad::ui::Ui) -> anyhow::Result<()> {
         use macroquad::ui::hash;
         ui.label(None, "Performance Settings:");
         ui.slider(hash!("aud_fft_thr"), "FFT Throttle (ms)", 0.0..500.0, &mut self.spectrum_throttle_ms);
@@ -184,6 +184,10 @@ impl RayExtension for AudioApplet {
         ui.label(None, "Audio Devices:");
         if ui.button(None, "Refresh Device List") {
             self.list_devices();
+        }
+
+        if ui.button(None, "Copy Device List") {
+            ctx.clipboard_write(self.device_list.clone());
         }
         
         Ok(())
