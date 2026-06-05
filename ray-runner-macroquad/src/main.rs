@@ -338,7 +338,7 @@ fn render_extensions_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui, act
 }
 
 fn render_hotkeys_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
-    ui.label(None, \"Hotkey Registry:\");
+    ui.label(None, "Hotkey Registry:");
     ui.separator();
 
     // Group by applet
@@ -351,7 +351,7 @@ fn render_hotkeys_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
     let conflicts = &engine.hotkey_registry.conflicts;
 
     for (applet, mut hotkeys) in grouped {
-        ui.label(None, &format!(\"--- {} ---\", applet));
+        ui.label(None, &format!("--- {} ---", applet));
         
         // Sort by scope: Global -> OS -> Local
         hotkeys.sort_by_key(|(_, def)| match def.scope {
@@ -366,21 +366,21 @@ fn render_hotkeys_tab(engine: &mut RayEngine, ui: &mut macroquad::ui::Ui) {
             });
             
             let mut mods_parts = Vec::new();
-            if def.modifiers.contains(ray_api::HotkeyModifiers::CTRL) { mods_parts.push(\"Ctrl\"); }
-            if def.modifiers.contains(ray_api::HotkeyModifiers::SHIFT) { mods_parts.push(\"Shift\"); }
-            if def.modifiers.contains(ray_api::HotkeyModifiers::ALT) { mods_parts.push(\"Alt\"); }
-            if def.modifiers.contains(ray_api::HotkeyModifiers::LOGO) { mods_parts.push(\"Logo\"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::CTRL) { mods_parts.push("Ctrl"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::SHIFT) { mods_parts.push("Shift"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::ALT) { mods_parts.push("Alt"); }
+            if def.modifiers.contains(ray_api::HotkeyModifiers::LOGO) { mods_parts.push("Logo"); }
             
             let key_combo = if mods_parts.is_empty() {
                 def.key.clone()
             } else {
-                format!(\"{}+{}\", mods_parts.join(\"+\"), def.key)
+                format!("{}+{}", mods_parts.join("+"), def.key)
             };
 
-            let label = format!(\"{}: {} ({}) [{:?}]\", id, def.description, key_combo, def.scope);
+            let label = format!("{}: {} ({}) [{:?}]", id, def.description, key_combo, def.scope);
             
             if is_conflict {
-                ui.label(None, &format!(\"!!! CONFLICT !!! {}\", label));
+                ui.label(None, &format!("!!! CONFLICT !!! {}", label));
             } else {
                 ui.label(None, &label);
             }
@@ -504,4 +504,3 @@ fn update_window_overlay(active: bool) {
 
 #[cfg(not(any(target_os = "macos", windows)))]
 fn update_window_overlay(_active: bool) {}
-

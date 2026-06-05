@@ -171,6 +171,8 @@ pub enum RayCommand {
     ToggleOverlay(bool),
     /// Toggles the framework mini mode (shrunk window).
     MiniMode(bool),
+    /// Switches the active extension to the one with the given name.
+    SelectExtension(String),
 }
 
 /// Audio system control commands.

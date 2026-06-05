@@ -18,9 +18,9 @@ enum AudioFormat {
 impl AudioFormat {
     fn ext(&self) -> &str {
         match self {
-            Self::Mp3 => \"mp3\",
-            Self::Ogg => \"ogg\",
-            Self::Wav => \"wav\",
+            Self::Mp3 => "mp3",
+            Self::Ogg => "ogg",
+            Self::Wav => "wav",
         }
     }
 }
@@ -45,6 +45,10 @@ pub struct CaptureApplet {
 
 impl CaptureApplet {
     pub fn new() -> Self {
+        let save_dir = dirs::desktop_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| ".".to_string());
+
         Self {
             active: false,
             mode: CaptureMode::Screenshot,
@@ -57,7 +61,7 @@ impl CaptureApplet {
             recording_filename: None,
             crf: 23,
             fps: 30,
-            save_dir: \".\".to_string(),
+            save_dir,
             audio_enabled: false,
             standalone_audio_format: AudioFormat::Mp3,
             audio_stdin: None,
@@ -65,33 +69,38 @@ impl CaptureApplet {
     }
 
     fn save_settings(&self) -> Result<()> {
-        let conn = rusqlite::Connection::open(\"framework_settings.db\")?;
+        let conn = rusqlite::Connection::open("framework_settings.db")?;
         conn.execute(
-            \"INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)\",
-            rusqlite::params![\"capture\", \"audio_enabled\", self.audio_enabled.to_string()],
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["capture", "audio_enabled", self.audio_enabled.to_string()],
         )?;
         conn.execute(
-            \"INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)\",
-            rusqlite::params![\"capture\", \"standalone_audio_format\", format!(\"{:?}\", self.standalone_audio_format)],
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["capture", "standalone_audio_format", format!("{:?}", self.standalone_audio_format)],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO applet_configs (applet, key, value) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["capture", "save_dir", self.save_dir],
         )?;
         Ok(())
     }
 
     fn load_settings(&mut self) {
-        if let Ok(conn) = rusqlite::Connection::open(\"framework_settings.db\") {
-            let mut stmt = conn.prepare(\"SELECT key, value FROM applet_configs WHERE applet = ?1\").ok().unwrap();
-            let rows = stmt.query_map(rusqlite::params![\"capture\"], |row| {
+        if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
+            let mut stmt = conn.prepare("SELECT key, value FROM applet_configs WHERE applet = ?1").ok().unwrap();
+            let rows = stmt.query_map(rusqlite::params!["capture"], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             }).ok().unwrap();
 
             for row in rows.flatten() {
                 match row.0.as_str() {
-                    \"audio_enabled\" => self.audio_enabled = row.1.parse().unwrap_or(false),
-                    \"standalone_audio_format\" => {
+                    "audio_enabled" => self.audio_enabled = row.1.parse().unwrap_or(false),
+                    "save_dir" => self.save_dir = row.1,
+                    "standalone_audio_format" => {
                         match row.1.as_str() {
-                            \"Mp3\" => self.standalone_audio_format = AudioFormat::Mp3,
-                            \"Ogg\" => self.standalone_audio_format = AudioFormat::Ogg,
-                            \"Wav\" => self.standalone_audio_format = AudioFormat::Wav,
+                            "Mp3" => self.standalone_audio_format = AudioFormat::Mp3,
+                            "Ogg" => self.standalone_audio_format = AudioFormat::Ogg,
+                            "Wav" => self.standalone_audio_format = AudioFormat::Wav,
                             _ => {}
                         }
                     }
@@ -144,8 +153,21 @@ impl CaptureApplet {
                 }
 
                 cmd.arg(&filename);
+                cmd.stderr(std::process::Stdio::piped());
 
                 let mut child = cmd.spawn()?;
+                
+                // Spawn a thread to pipe ffmpeg stderr to our tracing
+                if let Some(stderr) = child.stderr.take() {
+                    std::thread::spawn(move || {
+                        use std::io::{BufRead, BufReader};
+                        let reader = std::io::BufReader::new(stderr);
+                        for line in reader.lines().flatten() {
+                            eprintln!("FFmpeg: {}", line);
+                        }
+                    });
+                }
+
                 if self.audio_enabled {
                     if let Some(stdin) = child.stdin.take() {
                         self.audio_stdin = Some(std::io::BufWriter::new(stdin));
@@ -161,23 +183,36 @@ impl CaptureApplet {
     }
 
     fn start_audio_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
-        let timestamp = chrono::Local::now().format(\"%Y%m%d_%H%M%S\").to_string();
-        let filename = format!(\"audio_{}.{}\", timestamp, self.standalone_audio_format.ext());
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let filename = format!("audio_{}.{}", timestamp, self.standalone_audio_format.ext());
         let path = std::path::Path::new(&self.save_dir).join(filename);
 
-        let mut cmd = std::process::Command::new(\"ffmpeg\");
-        cmd.args(&[\"-f\", \"f32le\", \"-ar\", \"44100\", \"-ac\", \"1\", \"-i\", \"-\"]);
+        let mut cmd = std::process::Command::new("ffmpeg");
+        cmd.args(&["-y", "-f", "f32le", "-ar", "44100", "-ac", "1", "-i", "-"]);
         
         match self.standalone_audio_format {
-            AudioFormat::Mp3 => { cmd.args(&[\"-c:a\", \"libmp3lame\"]); }
-            AudioFormat::Ogg => { cmd.args(&[\"-c:a\", \"libvorbis\"]); }
+            AudioFormat::Mp3 => { cmd.args(&["-c:a", "libmp3lame"]); }
+            AudioFormat::Ogg => { cmd.args(&["-c:a", "libvorbis"]); }
             AudioFormat::Wav => { /* pcm by default */ }
         }
         
         cmd.arg(path.to_str().unwrap());
         cmd.stdin(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
         
         let mut child = cmd.spawn()?;
+        
+        // Spawn a thread to pipe ffmpeg stderr to our tracing
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                use std::io::{BufRead, BufReader};
+                let reader = std::io::BufReader::new(stderr);
+                for line in reader.lines().flatten() {
+                    eprintln!("FFmpeg: {}", line);
+                }
+            });
+        }
+
         if let Some(stdin) = child.stdin.take() {
             self.audio_stdin = Some(std::io::BufWriter::new(stdin));
         }
@@ -185,21 +220,29 @@ impl CaptureApplet {
         
         // Ensure audio feed is on
         ctx.bus.send(RayEvent::Command(RayCommand::Audio(ray_api::AudioCommand::StartRecording)));
-        tracing::info!(\"Started standalone audio recording to {:?}\", self.audio_only_process);
+        ctx.send_command(RayCommand::MiniMode(true));
+        tracing::info!("Started standalone audio recording to {}", path.display());
         Ok(())
     }
 
     fn stop_recording(&mut self, ctx: &mut RayContext) -> Result<()> {
-        self.audio_stdin = None; // Dropping BufWriter closes the pipe
+        // 1. Drop the writer to close the pipe (EOF to FFmpeg)
+        self.audio_stdin = None;
+        
+        // 2. Wait for processes to exit gracefully instead of killing immediately
         if let Some(mut child) = self.recording_process.take() {
-            let _ = child.kill();
+            let _ = child.wait();
             ctx.send_command(RayCommand::MiniMode(false));
-            tracing::info!(\"Stopped recording. Saved to {:?}\", self.recording_filename.take());
+            tracing::info!("Stopped recording. Saved to {:?}", self.recording_filename.take());
         }
+        
         if let Some(mut child) = self.audio_only_process.take() {
-            let _ = child.kill();
-            tracing::info!(\"Stopped audio recording.\");
+            let _ = child.wait();
+            ctx.send_command(RayCommand::MiniMode(false));
+            tracing::info!("Stopped standalone audio recording.");
         }
+        
+        self.active = false;
         Ok(())
     }
 
@@ -276,15 +319,15 @@ impl RayExtension for CaptureApplet {
             key: "R".to_string(),
             modifiers: HotkeyModifiers::CTRL | HotkeyModifiers::SHIFT,
             scope: HotkeyScope::Global,
-            description: \"Capture Region Video\".to_string(),
+            description: "Capture Region Video".to_string(),
             internal_keycode: None,
         });
         ctx.register_hotkey(HotkeyDefinition {
-            id: \"capture_pure_audio\".to_string(),
-            key: \"A\".to_string(),
+            id: "capture_pure_audio".to_string(),
+            key: "A".to_string(),
             modifiers: HotkeyModifiers::CTRL | HotkeyModifiers::SHIFT,
             scope: HotkeyScope::Global,
-            description: \"Capture Standalone Audio\".to_string(),
+            description: "Capture Standalone Audio".to_string(),
             internal_keycode: None,
         });
         Ok(())
@@ -293,7 +336,7 @@ impl RayExtension for CaptureApplet {
     fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> Result<()> {
         match event {
             RayEvent::HotkeyTriggered(id) if id == "region_screenshot" => {
-                if self.recording_process.is_some() {
+                if self.recording_process.is_some() || self.audio_only_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
@@ -305,23 +348,25 @@ impl RayExtension for CaptureApplet {
                     self.selection_end = None;
                 }
             }
-            RayEvent::HotkeyTriggered(id) if id == \"region_video\" => {
-                if self.recording_process.is_some() {
+            RayEvent::HotkeyTriggered(id) if id == "region_video" => {
+                if self.recording_process.is_some() || self.audio_only_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
                     self.mode = CaptureMode::Video;
-                    ctx.send_command(RayCommand::SelectExtension(\"Capture\".to_string()));
+                    ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
                     self.capture_screenshot()?;
                     self.selection_start = None;
                     self.selection_end = None;
                 }
             }
-            RayEvent::HotkeyTriggered(id) if id == \"capture_pure_audio\" => {
-                if self.audio_only_process.is_some() {
+            RayEvent::HotkeyTriggered(id) if id == "capture_pure_audio" => {
+                ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
+                if self.audio_only_process.is_some() || self.recording_process.is_some() {
                     self.stop_recording(ctx)?;
                 } else {
+                    self.active = true;
                     self.start_audio_recording(ctx)?;
                 }
             }
@@ -344,13 +389,21 @@ impl RayExtension for CaptureApplet {
     }
 
     fn update(&mut self, ctx: &mut RayContext) -> Result<()> {
-        if self.recording_process.is_some() {
-            // Check if process is still running
+        if self.recording_process.is_some() || self.audio_only_process.is_some() {
+            // Check if processes are still running
             if let Some(proc) = &mut self.recording_process {
                 if let Ok(Some(_status)) = proc.try_wait() {
                     self.recording_process = None;
                     self.recording_filename = None;
                     ctx.send_command(RayCommand::MiniMode(false));
+                    self.active = false;
+                }
+            }
+            if let Some(proc) = &mut self.audio_only_process {
+                if let Ok(Some(_status)) = proc.try_wait() {
+                    self.audio_only_process = None;
+                    ctx.send_command(RayCommand::MiniMode(false));
+                    self.active = false;
                 }
             }
         }
@@ -387,7 +440,7 @@ impl RayExtension for CaptureApplet {
     }
 
     fn render(&mut self, ctx: &mut RayContext) -> Result<()> {
-        if self.recording_process.is_some() {
+        if self.recording_process.is_some() || self.audio_only_process.is_some() {
             draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(40, 40, 40, 255));
             draw_circle(30.0, 30.0, 10.0, RED);
             draw_text("REC", 50.0, 38.0, 30.0, WHITE);
@@ -440,6 +493,7 @@ impl RayExtension for CaptureApplet {
         if ui.button(None, "Change Directory...") {
             if let Some(path) = rfd::FileDialog::new().pick_folder() {
                 self.save_dir = path.to_string_lossy().into_owned();
+                let _ = self.save_settings();
             }
         }
         
@@ -457,11 +511,11 @@ impl RayExtension for CaptureApplet {
         self.crf = crf as i32;
         
         let mut fps = self.fps as f32;
-        ui.slider(hash!(\"fps_slider\"), \"Framerate (FPS)\", 10.0..60.0, &mut fps);
+        ui.slider(hash!("fps_slider"), "Framerate (FPS)", 10.0..60.0, &mut fps);
         self.fps = fps as i32;
 
         ui.separator();
-        ui.label(None, \"Standalone Audio Recording:\");
+        ui.label(None, "Standalone Audio Recording:");
         
         let mut format_idx = match self.standalone_audio_format {
             AudioFormat::Mp3 => 0,
@@ -470,7 +524,7 @@ impl RayExtension for CaptureApplet {
         };
         
         let old_idx = format_idx;
-        ui.combo_box(hash!(\"audio_format\"), \"Format\", &[\"MP3\", \"OGG\", \"WAV\"], &mut format_idx);
+        ui.combo_box(hash!("audio_format"), "Format", &["MP3", "OGG", "WAV"], &mut format_idx);
         if format_idx != old_idx {
             self.standalone_audio_format = match format_idx {
                 0 => AudioFormat::Mp3,

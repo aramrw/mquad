@@ -347,6 +347,18 @@ impl RayEngine {
                     ray_api::RayCommand::MiniMode(active) => {
                         self.mini_mode = *active;
                     }
+                    ray_api::RayCommand::SelectExtension(name) => {
+                        let mut enabled_idx = 0;
+                        for entry in &self.extensions {
+                            if entry.enabled {
+                                if entry.instance.name() == name {
+                                    self.active_extension_idx = enabled_idx;
+                                    break;
+                                }
+                                enabled_idx += 1;
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
