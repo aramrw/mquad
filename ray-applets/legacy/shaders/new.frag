@@ -37,13 +37,29 @@ float getHeight(vec2 id) {
     float spectrum = texture(AudioTexture, vec2(norm_x, 0.75)).r;
     float r = hash(id);
     
-    float h = 0.2 + spectrum * 8.0; 
+    // Base audio response
+    float audio_h = spectrum * 8.0;
+    
+    // The "Pop" Threshold: Amplify the loudest hits for extra depth
+    float cutoff = 0.65;
+    if (spectrum > cutoff) {
+        // Exponentially boost the volume that exceeds the cutoff
+        audio_h += pow(spectrum - cutoff, 1.5) * 40.0;
+    }
+    
+    float h = 0.2 + audio_h; 
     h *= (0.4 + r * 0.6);
     
     // Center bass pulse
     if (abs(id.x) <= 2.0) {
         float bass = texture(AudioTexture, vec2(0.05, 0.75)).r;
-        h += bass * 3.0;
+        float bass_boost = bass * 3.0;
+        
+        // Massive pop for the heavy kicks down the center
+        if (bass > 0.7) {
+            bass_boost += pow(bass - 0.7, 1.5) * 50.0;
+        }
+        h += bass_boost;
     }
     return h;
 }
