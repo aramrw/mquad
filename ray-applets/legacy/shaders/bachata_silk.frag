@@ -74,19 +74,26 @@ void main() {
     float mids = texture(AudioTexture, vec2(0.4, 0.75)).r;
     float treble = texture(AudioTexture, vec2(0.9, 0.75)).r;
 
-    // Camera: Swaying side to side like the bachata basic step (1, 2, 3, tap)
-    float swayX = sin(Time * 1.5) * 2.5;
-    float swayY = cos(Time * 3.0) * 0.2; // Slight dip on the steps
+    // Camera: Swaying side to side like the bachata basic step
+    // The sway speed and width increases with the mids (guitars/bongos)
+    float swaySway = sin(Time * 1.5) * (2.0 + mids * 2.0);
+    float swayX = swaySway;
     
-    vec3 ro = vec3(swayX, 2.0 + swayY, Time * 4.0);
-    vec3 lookAt = ro + vec3(sin(Time * 0.75) * 1.0, -1.0, 4.0);
+    // The dip in the dance step gets deeper when the bass hits hard
+    float swayY = cos(Time * 3.0) * (0.1 + bass * 0.4); 
+    
+    // Forward movement pulses slightly with the music rather than just being linear
+    float forwardMotion = Time * 3.0 + sin(Time * 2.0) * bass * 1.5;
+    
+    vec3 ro = vec3(swayX, 2.0 + swayY, forwardMotion);
+    vec3 lookAt = ro + vec3(sin(Time * 0.75) * (1.0 + mids), -1.0, 4.0);
     
     vec3 forward = normalize(lookAt - ro);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), forward));
     vec3 up = normalize(cross(right, forward));
     
-    // Camera roll for extra sensual/dramatic feel
-    float roll = sin(Time * 1.2) * 0.15;
+    // Camera roll becomes much more dramatic when the music swells
+    float roll = sin(Time * 1.2) * (0.1 + bass * 0.25);
     vec2 pRot = p * rot(roll);
     
     vec3 rd = normalize(forward + right * pRot.x + up * pRot.y);
