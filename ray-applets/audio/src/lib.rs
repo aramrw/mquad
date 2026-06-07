@@ -274,10 +274,54 @@ impl RayExtension for AudioApplet {
                         }
 
                         let res = microfft::real::rfft_1024(&mut fft_input);
+                        
+                        // 1. Calculate raw magnitudes (normalized)
+                        let mut raw_mags = [0.0f32; 512];
                         for i in 0..512 {
-                            let magnitude = (res[i].re.powi(2) + res[i].im.powi(2)).sqrt();
-                            let val = (magnitude * 50.0).log10().max(0.0) * 0.8;
-                            self.spectrum[i] = val.clamp(0.0, 1.0);
+                            // Normalize by N/2 (512) so a full-scale sine wave is ~1.0
+                            let magnitude = (res[i].re.powi(2) + res[i].im.powi(2)).sqrt() / 512.0;
+                            raw_mags[i] = magnitude;
+                        }
+
+                        // 2. Map to log scale, apply EQ, and temporal smoothing
+                        let alpha_attack = 0.6f32; // Fast response when audio hits
+                        let alpha_decay = 0.15f32; // Smooth fade out
+                        
+                        let min_idx = 1.5f32; // Skip DC (0)
+                        let max_idx = 511.0f32;
+                        
+                        for j in 0..512 {
+                            let t = j as f32 / 511.0;
+                            
+                            // Logarithmic frequency mapping
+                            let target_i = min_idx * (max_idx / min_idx).powf(t);
+                            
+                            let idx_floor = target_i.floor() as usize;
+                            let idx_ceil = target_i.ceil() as usize;
+                            let fraction = target_i.fract();
+                            
+                            let mut mag = if idx_floor < 512 && idx_ceil < 512 {
+                                raw_mags[idx_floor] * (1.0 - fraction) + raw_mags[idx_ceil] * fraction
+                            } else {
+                                0.0
+                            };
+                            
+                            // Gentle high-frequency EQ boost
+                            mag *= 1.0 + t * 2.0;
+
+                            // Convert to Decibels (dB)
+                            // A noise floor of -60dB is mapped to 0.0, 0dB is mapped to 1.0.
+                            let noise_floor_db = -60.0;
+                            let db = 20.0 * (mag + 1e-7).log10();
+                            
+                            // Scale so noise_floor_db -> 0.0, and 0dB -> 1.0
+                            let mut clamped_val = (db - noise_floor_db) / (-noise_floor_db);
+                            clamped_val = clamped_val.clamp(0.0, 1.0);
+                            
+                            // EMA smoothing
+                            let current = self.spectrum[j];
+                            let alpha = if clamped_val > current { alpha_attack } else { alpha_decay };
+                            self.spectrum[j] = current * (1.0 - alpha) + clamped_val * alpha;
                         }
                         ctx.bus.send(RayEvent::Audio(AudioEvent::Spectrum(self.spectrum.clone())));
                     }
