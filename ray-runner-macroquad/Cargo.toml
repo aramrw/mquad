@@ -8,6 +8,8 @@ ray-api = { path = "../ray-api" }
 ray-core = { path = "../ray-core" }
 ray-applet-yomichan = { path = "../ray-applets/yomichan" }
 ray-applet-shaders = { path = "../ray-applets/shaders" }
+ray-applet-cropper = { path = "../ray-applets/cropper" }
+ray-applet-trimmer = { path = "../ray-applets/trimmer" }
 ray-applet-audio = { path = "../ray-applets/audio" }
 ray-applet-capture = { path = "../ray-applets/capture" }
 macroquad = { workspace = true }

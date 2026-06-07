@@ -44,6 +44,8 @@ async fn main() {
     engine.register(ray_applet_shaders::ShaderApplet::new());
     engine.register(ray_applet_audio::AudioApplet::new());
     engine.register(ray_applet_capture::CaptureApplet::new());
+    engine.register(ray_applet_cropper::CropperApplet::new());
+    engine.register(ray_applet_trimmer::TrimmerApplet::new());
 
     // Load persisted enabled/disabled states after registration
     let _ = engine.load_settings();
@@ -169,6 +171,15 @@ async fn main() {
         if root_ui().button(Some(vec2(x_off, screen_h - bar_height + 5.0)), console_label) {
             show_console = !show_console;
             show_settings = false;
+        }
+        x_off += 120.0;
+        
+        if root_ui().button(Some(vec2(x_off, screen_h - bar_height + 5.0)), "Test Pipeline") {
+            engine.bus().send(ray_api::RayEvent::Payload(ray_api::PayloadMessage {
+                source: "System".to_string(),
+                target: "Cropper".to_string(),
+                data: ray_api::PayloadData::File(std::path::PathBuf::from("/tmp/test_video.mp4")),
+            }));
         }
         x_off += 120.0;
 
