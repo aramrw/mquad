@@ -142,6 +142,24 @@ pub struct HotkeyDefinition {
     pub internal_keycode: Option<KeyCode>,
 }
 
+use std::path::PathBuf;
+
+/// The type of data contained in a payload.
+#[derive(Clone, Debug)]
+pub enum PayloadData {
+    File(PathBuf),
+    Buffer(Vec<u8>),
+    Text(String),
+}
+
+/// A message passed between extensions (nodes).
+#[derive(Clone, Debug)]
+pub struct PayloadMessage {
+    pub source: String,
+    pub target: String,
+    pub data: PayloadData,
+}
+
 /// Events dispatched through the Ray framework.
 pub enum RayEvent {
     /// Keyboard or mouse input event.
@@ -157,6 +175,8 @@ pub enum RayEvent {
     HotkeyTriggered(String),
     /// Custom event for extension-specific communication.
     Custom(Box<dyn Any + Send + Sync>),
+    /// Payload sent between nodes.
+    Payload(PayloadMessage),
 }
 
 /// Commands that can be issued to the framework.
