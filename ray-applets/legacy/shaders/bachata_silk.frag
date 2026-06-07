@@ -44,9 +44,9 @@ float GetDist(vec3 p) {
     float height = wave1 + wave2 + micro;
     
     // Extreme bass pop to make the silk leap up on the heavy beats
-    float bassPop = bass * 2.0;
-    if (bass > 0.6) {
-        bassPop += pow(bass - 0.6, 1.5) * 15.0;
+    float bassPop = bass * 3.0;
+    if (bass > 0.5) {
+        bassPop += pow(bass - 0.5, 1.5) * 25.0;
     }
     
     float d = p.y + 1.5 - height * (0.6 + bassPop);
@@ -116,8 +116,8 @@ void main() {
     float aurora1 = smoothstep(0.0, 1.0, sin(rd.x * 5.0 + Time) * cos(rd.y * 3.0 - Time * 0.5));
     float aurora2 = smoothstep(0.0, 1.0, sin(rd.x * 3.0 - Time * 1.2) * cos(rd.y * 4.0 + Time * 0.8));
     
-    skyColor += vec3(0.6, 0.0, 0.1) * aurora1 * bass * 2.0;   // Deep red sweeps with bass
-    skyColor += vec3(0.3, 0.0, 0.5) * aurora2 * mids * 1.5;   // Purple sweeps with mids
+    skyColor += vec3(0.8, 0.0, 0.15) * aurora1 * (bass * 3.0 + pow(bass, 2.0) * 10.0);   // Deep red sweeps with bass
+    skyColor += vec3(0.5, 0.0, 0.9) * aurora2 * (mids * 2.0 + pow(mids, 2.0) * 5.0);   // Purple sweeps with mids
     
     // Floating gold embers / stars reacting to treble
     // Offset by Time so the stars slowly drift across the sky
@@ -159,11 +159,13 @@ void main() {
         
         vec3 groundColor = albedo * diff;
         groundColor += colGold * spec * specPower; // Glossy shine
-        groundColor += rimColor * rim * (0.4 + bass * 0.8); // Edges glow
+        // Distance-based rim glow so the far background peaks light up dramatically
+        groundColor += rimColor * rim * (0.4 + bass * 1.5 + (dO * 0.05 * bass)); 
         
         // Volumetric mist in the valleys blending into the sky
         float fog = exp(-dO * 0.03); // Softer fog transition
-        vec3 mistColor = vec3(0.1, 0.0, 0.1) + vec3(0.4, 0.0, 0.1) * bass;
+        // Exponentially increase mist glow in the distance when bass hits
+        vec3 mistColor = vec3(0.1, 0.0, 0.1) + vec3(0.6, 0.0, 0.2) * (bass + pow(bass, 1.5) * 2.0);
         
         // Blend ground with mist, then mix into the sky background based on distance
         groundColor = mix(mistColor, groundColor, fog);
