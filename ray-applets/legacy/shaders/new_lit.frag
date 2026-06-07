@@ -12,6 +12,18 @@ const int MAX_STEPS = 100;
 const float MAX_DIST = 80.0;
 const float SURF_DIST = 0.01;
 
+// Custom Palette: ["#0d1b2a","#1b263b","#415a77","#778da9","#e0e1dd"]
+vec3 col1 = vec3(0.051, 0.106, 0.165); // Darkest Navy
+vec3 col2 = vec3(0.106, 0.149, 0.231); // Dark Blue
+vec3 col3 = vec3(0.255, 0.353, 0.467); // Slate
+vec3 col4 = vec3(0.467, 0.553, 0.663); // Light Slate
+vec3 col5 = vec3(0.878, 0.882, 0.867); // Off-White
+
+mat2 rot(float a) {
+    float s = sin(a), c = cos(a);
+    return mat2(c, -s, s, c);
+}
+
 float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -30,13 +42,14 @@ float getHeight(vec2 id, out float emission) {
     float r = hash(id);
     
     float audio_h = spectrum * 8.0;
-    float cutoff = 0.65;
+    float cutoff = 0.60; // Lowered cutoff so things pop easier
     emission = 0.0;
     
+    // EXTREME POP MATH
     if (spectrum > cutoff) {
-        audio_h += pow(spectrum - cutoff, 1.5) * 40.0;
-        // The louder it is above the cutoff, the harder it glows
-        emission = pow(spectrum - cutoff, 1.5) * 5.0; 
+        // Multiplier jumped from 40.0 -> 120.0 for massive pops
+        audio_h += pow(spectrum - cutoff, 1.5) * 120.0; 
+        emission = pow(spectrum - cutoff, 1.5) * 12.0; 
     }
     
     float h = 0.2 + audio_h; 
@@ -45,9 +58,10 @@ float getHeight(vec2 id, out float emission) {
     if (abs(id.x) <= 2.0) {
         float bass = texture(AudioTexture, vec2(0.05, 0.75)).r;
         float bass_boost = bass * 3.0;
-        if (bass > 0.7) {
-            bass_boost += pow(bass - 0.7, 1.5) * 50.0;
-            emission += pow(bass - 0.7, 1.5) * 8.0;
+        if (bass > 0.65) { // Lowered bass cutoff
+            // Multiplier jumped from 50.0 -> 180.0
+            bass_boost += pow(bass - 0.65, 1.5) * 180.0;
+            emission += pow(bass - 0.65, 1.5) * 20.0;
         }
         h += bass_boost;
     }
@@ -143,6 +157,11 @@ void main() {
     vec3 up = cross(forward, right);
     vec3 rd = normalize(forward + right * p.x + up * p.y);
 
+    // BARREL ROLL SPIN: 
+    // Rotate the ray direction along its local Z axis over time to create a spiraling effect
+    float spinSpeed = Time * 0.3 + sin(Time * 0.5) * 0.2; // Slow, slightly swaying roll
+    rd.xy *= rot(spinSpeed);
+
     float dO = 0.0;
     vec3 pHit;
     float glowAcc = 0.0; // Volumetric glow accumulator
@@ -183,16 +202,17 @@ void main() {
         float emission = 0.0;
         float h = getHeight(id, emission);
         
-        // Dark, glossy material base
-        vec3 albedo = vec3(0.08, 0.09, 0.1); 
-        if (r < 0.2) albedo = vec3(0.02, 0.02, 0.02);
+        // Apply Color Palette to Materials
+        vec3 albedo = col2; // Dark Blue Base
+        if (r < 0.2) albedo = col1; // Darkest Navy patches
+        else if (r > 0.7) albedo = col3 * 0.6; // Slate accents
         
-        // Dual Light Setup
+        // Dual Light Setup colored by the palette
         vec3 lightDir1 = normalize(vec3(0.8, 1.0, -0.4));
-        vec3 lightCol1 = vec3(1.0, 0.9, 0.8); // Warm sun
+        vec3 lightCol1 = col5; // Off-White sun
         
         vec3 lightDir2 = normalize(vec3(-0.8, 0.5, 0.4));
-        vec3 lightCol2 = vec3(0.2, 0.4, 0.8) * 0.6; // Cool rim light
+        vec3 lightCol2 = col3; // Slate rim light
 
         // Diffuse
         float diff1 = max(dot(n, lightDir1), 0.0);
@@ -207,14 +227,13 @@ void main() {
         
         float ao = calcAO(warpPos, n);
         
-        // Dynamic Emissive Color based on frequency
-        // Bass = Red/Orange, Mids = Blue/Teal, Treble = Purple/Pink
+        // Emissive Colors mapped to the new palette
         vec3 emissiveColor = vec3(0.0);
         float freq = clamp(abs(id.x) / 20.0, 0.0, 1.0);
         
-        if (freq < 0.2) emissiveColor = vec3(1.0, 0.2, 0.05); // Bass
-        else if (freq < 0.6) emissiveColor = vec3(0.0, 0.8, 1.0); // Mids
-        else emissiveColor = vec3(0.8, 0.1, 1.0); // Treble
+        if (freq < 0.2) emissiveColor = col5; // Bass hits are blinding Off-White
+        else if (freq < 0.6) emissiveColor = col4; // Mids glow Light Slate
+        else emissiveColor = col3; // Treble glows darker Slate
 
         // Composite lighting
         color = albedo * (diff1 * lightCol1 + diff2 * lightCol2) * ao;
@@ -222,11 +241,9 @@ void main() {
         
         // Add Audio Emissive Glow
         if (emission > 0.0) {
-            // Emissive gradient - only the very top of the building glows
             float topGradient = smoothstep(h - 3.0, h + 0.1, warpPos.y);
             color += emissiveColor * emission * topGradient;
             
-            // Glowing neon borders on the roof
             if (n.y > 0.5) {
                 vec2 localUv = abs(fract(warpPos.xz) - 0.5);
                 float edge = step(0.35, max(localUv.x, localUv.y));
@@ -235,16 +252,16 @@ void main() {
         }
     }
     
-    // Add Volumetric Atmosphere driven by Bass
+    // Add Volumetric Atmosphere 
     float bassGlow = texture(AudioTexture, vec2(0.05, 0.75)).r;
-    vec3 atmosColor = mix(vec3(0.8, 0.1, 0.05), vec3(0.1, 0.5, 0.9), sin(Time * 0.2) * 0.5 + 0.5);
-    color += atmosColor * glowAcc * (0.3 + bassGlow * 0.8);
+    vec3 atmosColor = mix(col2, col3, sin(Time * 0.2) * 0.5 + 0.5);
+    color += atmosColor * glowAcc * (0.5 + bassGlow * 1.2);
 
-    // Fog fading into pure darkness
+    // Fog fading into the darkest palette color
     float fog = exp(-dO * 0.035);
-    color = mix(vec3(0.01, 0.01, 0.015), color, fog);
+    color = mix(col1 * 0.5, color, fog);
 
-    // Cinematic Tonemapping and Gamma correction
+    // Cinematic Tonemapping
     color = color / (1.0 + color);
     color = pow(color, vec3(1.0 / 2.2));
 
