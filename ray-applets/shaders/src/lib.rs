@@ -27,8 +27,6 @@ pub struct ShaderApplet {
     
     // Internal cache
     last_modified: Option<SystemTime>,
-    last_check_time: f64,
-    file_check_throttle_ms: f32,
     material: Option<Material>,
     render_target: Option<RenderTarget>,
     
@@ -52,8 +50,6 @@ impl ShaderApplet {
             show_library: true,
             hud_visible: true,
             last_modified: None,
-            last_check_time: 0.0,
-            file_check_throttle_ms: 500.0,
             material: None,
             render_target: None,
             volume: 0.0,
@@ -156,13 +152,6 @@ impl ShaderApplet {
     }
 
     fn check_file_update(&mut self) {
-        let now = get_time();
-        let throttle_sec = self.file_check_throttle_ms as f64 / 1000.0;
-        if now - self.last_check_time < throttle_sec {
-            return;
-        }
-        self.last_check_time = now;
-
         if let Some(path) = self.get_current_shader_path() {
             if let Ok(metadata) = std::fs::metadata(&path) {
                 if let Ok(modified) = metadata.modified() {
@@ -263,11 +252,6 @@ impl RayExtension for ShaderApplet {
     }
 
     fn settings_ui(&mut self, _ctx: &mut RayContext, ui: &mut macroquad::ui::Ui) -> anyhow::Result<()> {
-        use macroquad::ui::hash;
-        ui.label(None, "Performance Settings:");
-        ui.slider(hash!("sh_file_thr"), "File Check Throttle (ms)", 0.0..2000.0, &mut self.file_check_throttle_ms);
-        ui.separator();
-
         ui.label(None, "System Paths:");
         for dir in &self.shader_dirs {
             ui.label(None, &format!("- {:?}", dir));

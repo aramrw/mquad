@@ -2,10 +2,11 @@ use ray_api::{RayExtension, RayContext, RayEvent, HotkeyDefinition, HotkeyScope,
 use macroquad::prelude::*;
 use anyhow::Result;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum CaptureMode {
     Screenshot,
     Video,
+    Audio,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -246,7 +247,10 @@ impl CaptureApplet {
         Ok(())
     }
 
-    fn capture_screenshot(&mut self) -> Result<()> {
+    fn capture_screenshot(&mut self, ctx: &mut RayContext) -> Result<()> {
+        // Switch to borderless fullscreen
+        ctx.send_command(RayCommand::ToggleOverlay(true));
+        
         let screens = xcap::Monitor::all()?;
         if let Some(monitor) = screens.first() {
             let image = monitor.capture_image()?;
@@ -258,6 +262,9 @@ impl CaptureApplet {
             self.snapshot_tex = Some(texture);
             self.snapshot_raw = Some(image);
         }
+        
+        // Restore overlay state
+        ctx.send_command(RayCommand::ToggleOverlay(false));
         Ok(())
     }
 
@@ -343,7 +350,7 @@ impl RayExtension for CaptureApplet {
                     self.mode = CaptureMode::Screenshot;
                     ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
-                    self.capture_screenshot()?;
+                    self.capture_screenshot(ctx)?;
                     self.selection_start = None;
                     self.selection_end = None;
                 }
@@ -356,7 +363,7 @@ impl RayExtension for CaptureApplet {
                     self.mode = CaptureMode::Video;
                     ctx.send_command(RayCommand::SelectExtension("Capture".to_string()));
                     ctx.send_command(RayCommand::ToggleOverlay(true));
-                    self.capture_screenshot()?;
+                    self.capture_screenshot(ctx)?;
                     self.selection_start = None;
                     self.selection_end = None;
                 }
@@ -367,6 +374,7 @@ impl RayExtension for CaptureApplet {
                     self.stop_recording(ctx)?;
                 } else {
                     self.active = true;
+                    self.mode = CaptureMode::Audio;
                     self.start_audio_recording(ctx)?;
                 }
             }
@@ -408,7 +416,7 @@ impl RayExtension for CaptureApplet {
             }
         }
 
-        if !self.active { return Ok(()); }
+        if !self.active || self.mode == CaptureMode::Audio { return Ok(()); }
 
         if is_key_pressed(KeyCode::Escape) {
             self.active = false;
@@ -447,6 +455,30 @@ impl RayExtension for CaptureApplet {
             return Ok(());
         }
 
+        // Mode Buttons
+        let ui = &mut macroquad::ui::root_ui();
+        let btn_y = 50.0;
+        
+        if ui.button(Some(vec2(10.0, btn_y)), if self.mode == CaptureMode::Screenshot { "[ Screenshot ]" } else { "Screenshot" }) {
+            if self.mode != CaptureMode::Screenshot {
+                self.mode = CaptureMode::Screenshot;
+            } else {
+                let _ = self.on_event(ctx, &RayEvent::HotkeyTriggered("region_screenshot".to_string()));
+            }
+        }
+        ui.same_line(0.0);
+        if ui.button(Some(vec2(120.0, btn_y)), if self.mode == CaptureMode::Video { "[ Video ]" } else { "Video" }) {
+            if self.mode != CaptureMode::Video {
+                self.mode = CaptureMode::Video;
+            } else {
+                let _ = self.on_event(ctx, &RayEvent::HotkeyTriggered("region_video".to_string()));
+            }
+        }
+        ui.same_line(0.0);
+        if ui.button(Some(vec2(210.0, btn_y)), "Audio") {
+             let _ = self.on_event(ctx, &RayEvent::HotkeyTriggered("capture_pure_audio".to_string()));
+        }
+        
         if !self.active { return Ok(()); }
         
         if let Some(tex) = &self.snapshot_tex {
@@ -455,26 +487,28 @@ impl RayExtension for CaptureApplet {
                 ..Default::default()
             });
         }
-
-        // Draw selection rect
+        
+        // Selection rect rendering
         if let (Some(start), Some(end)) = (self.selection_start, self.selection_end) {
             let x = start.x.min(end.x);
             let y = start.y.min(end.y);
             let w = (start.x - end.x).abs();
             let h = (start.y - end.y).abs();
             
-            // Dim background around selection
-            draw_rectangle(0.0, 0.0, screen_width(), y, Color::from_rgba(0, 0, 0, 150)); // Top
-            draw_rectangle(0.0, y + h, screen_width(), screen_height() - (y + h), Color::from_rgba(0, 0, 0, 150)); // Bottom
-            draw_rectangle(0.0, y, x, h, Color::from_rgba(0, 0, 0, 150)); // Left
-            draw_rectangle(x + w, y, screen_width() - (x + w), h, Color::from_rgba(0, 0, 0, 150)); // Right
+            draw_rectangle(0.0, 0.0, screen_width(), y, Color::from_rgba(0, 0, 0, 150));
+            draw_rectangle(0.0, y + h, screen_width(), screen_height() - (y + h), Color::from_rgba(0, 0, 0, 150));
+            draw_rectangle(0.0, y, x, h, Color::from_rgba(0, 0, 0, 150));
+            draw_rectangle(x + w, y, screen_width() - (x + w), h, Color::from_rgba(0, 0, 0, 150));
 
             draw_rectangle_lines(x, y, w, h, 2.0, RED);
             
-            let label = if self.mode == CaptureMode::Screenshot { "SCREENSHOT" } else { "RECORD" };
+            let label = match self.mode {
+                CaptureMode::Screenshot => "SCREENSHOT",
+                CaptureMode::Video => "RECORD",
+                CaptureMode::Audio => "AUDIO",
+            };
             draw_text(label, x, y - 5.0, 20.0, RED);
         } else {
-            // Full screen dim
             draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
             draw_text("Select Region (ESC to cancel)", 20.0, 30.0, 25.0, WHITE);
         }

@@ -10,8 +10,23 @@ use core_foundation::runloop::{CFRunLoopRunInMode, kCFRunLoopDefaultMode};
 use objc::{msg_send, sel, sel_impl};
 
 fn window_conf() -> Conf {
+    let conn = rusqlite::Connection::open("framework_settings.db").ok();
+    let mut width = 800.0;
+    let mut height = 600.0;
+    
+    if let Some(conn) = conn {
+        if let Ok(w) = conn.query_row("SELECT value FROM framework_configs WHERE key = 'win_width'", [], |r| r.get::<_, f32>(0)) {
+            width = w;
+        }
+        if let Ok(h) = conn.query_row("SELECT value FROM framework_configs WHERE key = 'win_height'", [], |r| r.get::<_, f32>(0)) {
+            height = h;
+        }
+    }
+
     Conf {
         window_title: "Ray".to_owned(),
+        window_width: width as i32,
+        window_height: height as i32,
         high_dpi: true,
         ..Default::default()
     }
@@ -20,6 +35,8 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut engine = RayEngine::new("framework_settings.db");
+    let mut last_w = screen_width();
+    let mut last_h = screen_height();
     
     let mut os_hotkey_manager = OsHotkeyManager::new();
 
@@ -50,6 +67,20 @@ async fn main() {
 
     loop {
         let frame_start = std::time::Instant::now();
+
+        // Detect resize
+        let cur_w = screen_width();
+        let cur_h = screen_height();
+        if (cur_w - last_w).abs() > 1.0 || (cur_h - last_h).abs() > 1.0 {
+            if let Ok(conn) = rusqlite::Connection::open("framework_settings.db") {
+                let _ = conn.execute("CREATE TABLE IF NOT EXISTS framework_configs (key TEXT PRIMARY KEY, value REAL)", []);
+                let _ = conn.execute("INSERT OR REPLACE INTO framework_configs (key, value) VALUES ('win_width', ?)", [cur_w]);
+                let _ = conn.execute("INSERT OR REPLACE INTO framework_configs (key, value) VALUES ('win_height', ?)", [cur_h]);
+            }
+            last_w = cur_w;
+            last_h = cur_h;
+        }
+
         clear_background(BLACK);
 
         #[cfg(target_os = "macos")]
@@ -68,7 +99,8 @@ async fn main() {
             if engine.mini_mode {
                 request_new_screen_size(200.0, 60.0);
             } else {
-                request_new_screen_size(800.0, 600.0);
+                // Restore last known dimensions
+                request_new_screen_size(last_w, last_h);
             }
             last_mini_mode = engine.mini_mode;
         }
