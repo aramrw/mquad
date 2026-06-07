@@ -70,7 +70,10 @@ void main() {
     
     vec3 forward = normalize(lookAt - ro);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), forward));
-    vec3 up = cross(forward, right);
+    // The previous cross product order might have flipped the 'up' vector
+    // Standard right-handed system: cross(right, forward) or cross(forward, right) depending on axes.
+    // To ensure the floor is at the bottom, we enforce a positive Y up vector.
+    vec3 up = normalize(cross(right, forward));
     
     // Camera roll for extra sensual/dramatic feel
     float roll = sin(Time * 1.2) * 0.15;
