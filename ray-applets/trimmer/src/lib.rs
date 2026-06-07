@@ -28,6 +28,47 @@ impl RayExtension for TrimmerApplet {
         Ok(())
     }
 
+    fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> anyhow::Result<()> {
+        if let RayEvent::Payload(msg) = event {
+            if msg.target == "Trimmer" {
+                if let PayloadData::File(ref path) = msg.data {
+                    self.status = format!("Trimming {:?}", path);
+                    
+                    // Output to user's desktop for the final file
+                    let desktop_path = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let out_path = PathBuf::from(desktop_path)
+                        .join("Desktop")
+                        .join(format!("final_{}", path.file_name().unwrap_or_default().to_string_lossy()));
+                    
+                    let start = self.start_time.clone();
+                    let dur = self.duration.clone();
+                    
+                    let status = Command::new("ffmpeg")
+                        .arg("-y") // Overwrite
+                        .arg("-i")
+                        .arg(path)
+                        .arg("-ss")
+                        .arg(&start)
+                        .arg("-t")
+                        .arg(&dur)
+                        .arg("-c")
+                        .arg("copy") // Stream copy for speed
+                        .arg(&out_path)
+                        .status();
+                        
+                    if status.is_ok() && status.unwrap().success() {
+                        self.status = format!("Saved to Desktop");
+                        // We could emit a broadcast payload here if needed:
+                        // target: "*", data: PayloadData::File(out_path)
+                    } else {
+                        self.status = "Failed".to_string();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn update(&mut self, _ctx: &mut RayContext) -> anyhow::Result<()> { Ok(()) }
 
     fn render(&mut self, _ctx: &mut RayContext) -> anyhow::Result<()> {
