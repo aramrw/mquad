@@ -31,6 +31,47 @@ impl RayExtension for CropperApplet {
         Ok(())
     }
 
+    fn on_event(&mut self, ctx: &mut RayContext, event: &RayEvent) -> anyhow::Result<()> {
+        if let RayEvent::Payload(msg) = event {
+            if msg.target == "Cropper" {
+                if let PayloadData::File(ref path) = msg.data {
+                    self.is_processing = true;
+                    self.status = format!("Cropping {:?}", path);
+                    
+                    let out_path = std::env::temp_dir().join(format!("cropped_{}", path.file_name().unwrap_or_default().to_string_lossy()));
+                    
+                    let w = self.target_width.clone();
+                    let h = self.target_height.clone();
+                    
+                    // Simple synchronous ffmpeg call for MVP
+                    let status = Command::new("ffmpeg")
+                        .arg("-y") // Overwrite
+                        .arg("-i")
+                        .arg(path)
+                        .arg("-vf")
+                        .arg(format!("crop={}:{}", w, h))
+                        .arg(&out_path)
+                        .status();
+                        
+                    self.is_processing = false;
+                    
+                    if status.is_ok() && status.unwrap().success() {
+                        self.status = "Complete".to_string();
+                        // Emit payload to the next node
+                        ctx.bus.send(RayEvent::Payload(PayloadMessage {
+                            source: "Cropper".to_string(),
+                            target: self.target_node.clone(),
+                            data: PayloadData::File(out_path),
+                        }));
+                    } else {
+                        self.status = "Failed".to_string();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn update(&mut self, _ctx: &mut RayContext) -> anyhow::Result<()> {
         Ok(())
     }
