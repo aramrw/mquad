@@ -15,7 +15,7 @@ const float SURF_DIST = 0.01;
 // Strict Stylized Palette (Drawing / Comic style)
 vec3 colPaper = vec3(0.95, 0.92, 0.84);
 vec3 colInk = vec3(0.08, 0.08, 0.10);
-vec3 colBrown = vec3(0.60, 0.40, 0.25);
+vec3 colBlue = vec3(0.15, 0.45, 0.65);
 vec3 colRed = vec3(0.85, 0.25, 0.20);
 vec3 colGold = vec3(0.95, 0.75, 0.10);
 
@@ -170,7 +170,7 @@ void main() {
         vec3 albedo = colPaper;
         if (r < 0.15) albedo = colInk;
         else if (r < 0.40) albedo = colRed;
-        else if (r < 0.65) albedo = colBrown;
+        else if (r < 0.65) albedo = colBlue;
         
         // Audio spikes get highlighted in Gold
         float h = getHeight(id);
